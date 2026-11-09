@@ -1,0 +1,11 @@
+{
+  "name": "@brucede/plugin-agent-chat",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Agent conversation panels and session controls.",
+  "peerDependencies": {
+    "@brucede/plugin-api": "0.1.0",
+    "@brucede/ui-kit": "0.1.0"
+  }
+}

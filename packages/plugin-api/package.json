@@ -1,0 +1,22 @@
+{
+  "name": "@brucede/plugin-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Versioned public API contracts for trusted native BruceDE plugins.",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js"
+    }
+  },
+  "files": ["lib"],
+  "dependencies": { "@lumino/widgets": "2.7.5" },
+  "devDependencies": { "typescript": "5.9.3" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch"
+  }
+}

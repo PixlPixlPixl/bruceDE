@@ -1,35 +1,26 @@
 # BruceDE
 
-A Theia-based desktop workspace built around a user-controlled, blank docking canvas.
+BruceDE is a plugin-first Theia desktop workspace. The initial workspace is an empty docking canvas; users install/open feature panels and decide how they are arranged. The host provides docking, plugin lifecycle, shared APIs, and platform integration—not a prescribed IDE layout.
 
-The application deliberately does not prescribe an IDE-style layout. Its initial workspace is empty. Extensions register available panel types, and the user decides which panels to open and how to arrange them.
+## Development
 
-## Requirements
+```bash
+npm ci
+npm run build:plugin-packages
+npm run build:workspace-core
+npm run build:electron
+npm run start:electron
+```
 
-- Node.js 18 or newer
-- npm 8 or newer
-- The native prerequisites required by Theia/Electron
+The application is pinned to Theia 1.77.0. Cordis manages native plugin lifecycle and dependencies. Plugins are trusted code, not sandboxed: read [AGENTS.md](./AGENTS.md) before developing or installing plugins.
 
-## Run the Electron application
+## Repository layout
 
-    npm install
-    npm run build:electron
-    npm run start:electron
+- `workspace-core/`: empty canvas, docking, panel registry and layout persistence.
+- `packages/plugin-api/`: stable plugin author API contracts.
+- `packages/plugin-runtime/`: Cordis contexts and runtime loader integration.
+- `packages/ui-kit/`: optional shared visual tokens/primitives.
+- `plugins/`: self-contained feature plugin packages (terminal, agent-chat, file-browser, Git).
+- `electron-app/` and `browser-app/`: Theia application targets.
 
-The build:electron script compiles workspace-core before bundling Theia.
-
-## Try the docking surface
-
-The workspace starts empty. Press F1 to open Theia's command palette and run:
-
-**Workspace: Open docking demo layout**
-
-This creates three temporary panels so you can verify split, tab, drag-and-drop, and resize behavior. The panels are visual placeholders; they do not start terminal or agent processes.
-
-## Packages
-
-- workspace-core: blank-canvas shell, shared panel registry, docking service, and demo panels.
-- electron-app: Electron desktop target.
-- browser-app: Browser target using the same workspace implementation.
-
-See workspace-core/README.md for the panel contribution API.
+See [AGENTS.md](./AGENTS.md) for the product goal, native trust model, plugin loading flow, communication rules, and implementation direction.
