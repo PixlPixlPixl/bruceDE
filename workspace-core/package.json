@@ -1,0 +1,36 @@
+{
+  "private": true,
+  "name": "workspace-core",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "User-controlled blank-canvas docking workspace for BruceDE.",
+  "keywords": [
+    "theia-extension"
+  ],
+  "dependencies": {
+    "@lumino/widgets": "2.7.5",
+    "@theia/core": "1.77.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
+    "watch": "tsc -p tsconfig.json --watch"
+  },
+  "theiaExtensions": [
+    {
+      "frontend": "lib/browser/workspace-core-frontend-module"
+    }
+  ],
+  "files": [
+    "lib",
+    "src"
+  ],
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json",
+    "./lib/*": "./lib/*.js"
+  }
+}

@@ -1,80 +1,35 @@
-# 
-The example of how to build the Theia-based applications with the .
+# BruceDE
 
-## Getting started
+A Theia-based desktop workspace built around a user-controlled, blank docking canvas.
 
-Please install all necessary [prerequisites](https://github.com/eclipse-theia/theia/blob/master/doc/Developing.md#prerequisites).
+The application deliberately does not prescribe an IDE-style layout. Its initial workspace is empty. Extensions register available panel types, and the user decides which panels to open and how to arrange them.
 
-## Running the browser example
+## Requirements
 
-    npm run build:browser
-    npm run start:browser
+- Node.js 18 or newer
+- npm 8 or newer
+- The native prerequisites required by Theia/Electron
 
-*or:*
+## Run the Electron application
 
-    npm run build:browser
-    cd browser-app
-    npm start
-
-*or:* launch `Start Browser Backend` configuration from VS code.
-
-Open http://localhost:3000 in the browser.
-
-## Running the Electron example
-
+    npm install
     npm run build:electron
     npm run start:electron
 
-*or:*
+The build:electron script compiles workspace-core before bundling Theia.
 
-    npm run build:electron
-    cd electron-app
-    npm start
+## Try the docking surface
 
-*or:* launch `Start Electron Backend` configuration from VS code.
+The workspace starts empty. Press F1 to open Theia's command palette and run:
 
+**Workspace: Open docking demo layout**
 
-## Developing with the browser example
+This creates three temporary panels so you can verify split, tab, drag-and-drop, and resize behavior. The panels are visual placeholders; they do not start terminal or agent processes.
 
-Start watching all packages, including `browser-app`, of your application with
+## Packages
 
-    npm run watch:browser
+- workspace-core: blank-canvas shell, shared panel registry, docking service, and demo panels.
+- electron-app: Electron desktop target.
+- browser-app: Browser target using the same workspace implementation.
 
-*or* watch only specific packages with
-
-    cd 
-    npm run watch
-
-and the browser example.
-
-    cd browser-app
-    npm run watch
-
-Run the example as [described above](#Running-the-browser-example)
-## Developing with the Electron example
-
-Start watching all packages, including `electron-app`, of your application with
-
-    npm run watch:electron
-
-*or* watch only specific packages with
-
-    cd 
-    npm run watch
-
-and the Electron example.
-
-    cd electron-app
-    npm run watch
-
-Run the example as [described above](#Running-the-Electron-example)
-
-## Publishing 
-
-Create a npm user and login to the npm registry, [more on npm publishing](https://docs.npmjs.com/getting-started/publishing-npm-packages).
-
-    npm login
-
-Publish packages with lerna to update versions properly across local packages, [more on publishing with lerna](https://github.com/lerna/lerna#publish).
-
-    npx lerna publish
+See workspace-core/README.md for the panel contribution API.

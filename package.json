@@ -5,8 +5,9 @@
     "npm": ">=8"
   },
   "scripts": {
-    "build:browser": "npm --prefix browser-app run bundle",
-    "build:electron": "npm --prefix electron-app run bundle",
+    "build:workspace-core": "npm --prefix workspace-core run build",
+    "build:browser": "npm run build:workspace-core && npm --prefix browser-app run bundle",
+    "build:electron": "npm run build:workspace-core && npm --prefix electron-app run bundle",
     "prepare": "lerna run prepare",
     "postinstall": "theia check:theia-version",
     "start:browser": "npm --prefix browser-app start",
@@ -18,6 +19,8 @@
     "lerna": "^8.2.4"
   },
   "workspaces": [
-     "browser-app", "electron-app"
+    "browser-app",
+    "electron-app",
+    "workspace-core"
   ]
 }
