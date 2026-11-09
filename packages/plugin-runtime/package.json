@@ -1,0 +1,31 @@
+{
+  "name": "@brucede/plugin-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cordis-based native plugin lifecycle runtime for BruceDE.",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "import": "./lib/index.js"
+    },
+    "./loader": {
+      "types": "./lib/loader.d.ts",
+      "import": "./lib/loader.js"
+    }
+  },
+  "keywords": ["theia-extension"],
+  "files": ["lib"],
+  "dependencies": {
+    "@brucede/plugin-api": "0.1.0",
+    "@deepseek-ai/cordis": "4.1.0",
+    "@deepseek-ai/cordis-plugin-loader": "1.1.0"
+  },
+  "devDependencies": { "typescript": "5.9.3" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch"
+  }
+}

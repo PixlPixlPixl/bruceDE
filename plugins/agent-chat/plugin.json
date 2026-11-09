@@ -1,0 +1,21 @@
+{
+  "id": "bruce.agent-chat",
+  "name": "Agent Chat",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "entrypoints": {
+    "frontend": "./dist/frontend.js",
+    "backend": "./dist/backend.js"
+  },
+  "dependencies": {
+    "bruce.workspace": "^0.1.0"
+  },
+  "contributes": {
+    "panels": [
+      {
+        "id": "agent-chat.conversation",
+        "title": "Agent Chat"
+      }
+    ]
+  }
+}

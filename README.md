@@ -1,80 +1,24 @@
-# 
-The example of how to build the Theia-based applications with the .
+# BruceDE
 
-## Getting started
+BruceDE is a plugin-first Theia desktop workspace. The initial workspace is an empty docking canvas; users install/open feature panels and decide how they are arranged. The host provides docking, plugin lifecycle, shared APIs, and platform integration—not a prescribed IDE layout.
 
-Please install all necessary [prerequisites](https://github.com/eclipse-theia/theia/blob/master/doc/Developing.md#prerequisites).
+## Development
 
-## Running the browser example
+```bash
+npm ci
+npm run build:electron
+npm run start:electron
+```
 
-    npm run build:browser
-    npm run start:browser
+The application is pinned to Theia 1.77.0. Cordis is the selected native-plugin lifecycle engine; this branch establishes its dependencies and the plugin API/package structure. Automatic runtime loading and the host adapters are follow-on work. Plugins are trusted code, not sandboxed: read [AGENTS.md](./AGENTS.md) before developing or installing plugins.
 
-*or:*
+## Repository layout
 
-    npm run build:browser
-    cd browser-app
-    npm start
+- `workspace-core/`: empty canvas, docking, panel registry and layout persistence.
+- `packages/plugin-api/`: stable plugin author API contracts.
+- `packages/plugin-runtime/`: Cordis dependencies and runtime entrypoints.
+- `packages/ui-kit/`: optional shared visual tokens/primitives.
+- `plugins/`: self-contained feature plugin packages (terminal, agent-chat, file-browser, Git).
+- `electron-app/` and `browser-app/`: Theia application targets.
 
-*or:* launch `Start Browser Backend` configuration from VS code.
-
-Open http://localhost:3000 in the browser.
-
-## Running the Electron example
-
-    npm run build:electron
-    npm run start:electron
-
-*or:*
-
-    npm run build:electron
-    cd electron-app
-    npm start
-
-*or:* launch `Start Electron Backend` configuration from VS code.
-
-
-## Developing with the browser example
-
-Start watching all packages, including `browser-app`, of your application with
-
-    npm run watch:browser
-
-*or* watch only specific packages with
-
-    cd 
-    npm run watch
-
-and the browser example.
-
-    cd browser-app
-    npm run watch
-
-Run the example as [described above](#Running-the-browser-example)
-## Developing with the Electron example
-
-Start watching all packages, including `electron-app`, of your application with
-
-    npm run watch:electron
-
-*or* watch only specific packages with
-
-    cd 
-    npm run watch
-
-and the Electron example.
-
-    cd electron-app
-    npm run watch
-
-Run the example as [described above](#Running-the-Electron-example)
-
-## Publishing 
-
-Create a npm user and login to the npm registry, [more on npm publishing](https://docs.npmjs.com/getting-started/publishing-npm-packages).
-
-    npm login
-
-Publish packages with lerna to update versions properly across local packages, [more on publishing with lerna](https://github.com/lerna/lerna#publish).
-
-    npx lerna publish
+See [AGENTS.md](./AGENTS.md) for the product goal, native trust model, intended plugin loading flow, communication rules, and implementation direction.

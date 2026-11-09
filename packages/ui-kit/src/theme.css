@@ -1,0 +1,11 @@
+/* Optional shared tokens. Plugins may replace or ignore these completely. */
+:root {
+  --bruce-space-1: 4px;
+  --bruce-space-2: 8px;
+  --bruce-space-3: 12px;
+  --bruce-space-4: 16px;
+  --bruce-radius-sm: 4px;
+  --bruce-radius-md: 8px;
+  --bruce-radius-lg: 12px;
+  --bruce-panel-padding: 12px;
+}
