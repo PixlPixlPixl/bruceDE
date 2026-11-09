@@ -6,8 +6,6 @@ BruceDE is a plugin-first Theia desktop workspace. The initial workspace is an e
 
 ```bash
 npm ci
-npm run build:plugin-packages
-npm run build:workspace-core
 npm run build:electron
 npm run start:electron
 ```
