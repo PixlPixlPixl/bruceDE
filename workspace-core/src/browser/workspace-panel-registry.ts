@@ -111,9 +111,25 @@ export class WorkspacePanelRegistry {
         return this.definitions.get(panelTypeId)?.owner;
     }
 
-    /** Panel type ids registered by a plugin. */
+    /** Panel type ids registered by a plugin, host-capability types included. */
     getPanelTypesByOwner(owner: string): readonly string[] {
         return Array.from(this.owners.get(owner) ?? []);
+    }
+
+    /**
+     * True for a panel type whose widget is built by a host capability.
+     *
+     * Such instances are **host-owned**: the host created them, the host's own
+     * Theia factory restores them, and disabling the plugin that exposed the
+     * capability must not destroy them.
+     */
+    isHostPanelType(panelTypeId: string): boolean {
+        return this.definitions.get(panelTypeId)?.definition.hostPanel === true;
+    }
+
+    /** Panel type ids a plugin genuinely owns (host-capability types excluded). */
+    getPluginOwnedPanelTypesByOwner(owner: string): readonly string[] {
+        return this.getPanelTypesByOwner(owner).filter(panelTypeId => !this.isHostPanelType(panelTypeId));
     }
 
     /**
@@ -184,9 +200,29 @@ export class WorkspacePanelRegistry {
             .map(([instanceId]) => instanceId);
     }
 
-    /** Instance ids owned by a plugin, across all of its panel types. */
+    /**
+     * Open instances of panel types a plugin registered, host panels included.
+     *
+     * Reporting only — see {@link getPluginOwnedInstancesByOwner} for the set the
+     * plugin is allowed to destroy.
+     */
     getOpenInstancesByOwner(owner: string): readonly string[] {
         const ownedTypes = new Set(this.getPanelTypesByOwner(owner));
+        return Array.from(this.instances.entries())
+            .filter(([, typeId]) => ownedTypes.has(typeId))
+            .map(([instanceId]) => instanceId);
+    }
+
+    /**
+     * Open instances the plugin owns and may close when it unloads.
+     *
+     * Host-capability instances are deliberately excluded: a plugin may ask the
+     * host to expose a terminal, but the terminal then belongs to the host and
+     * to the user. Unloading the plugin releases its panel *type*; it must not
+     * kill host resources or destroy user state.
+     */
+    getPluginOwnedInstancesByOwner(owner: string): readonly string[] {
+        const ownedTypes = new Set(this.getPluginOwnedPanelTypesByOwner(owner));
         return Array.from(this.instances.entries())
             .filter(([, typeId]) => ownedTypes.has(typeId))
             .map(([instanceId]) => instanceId);

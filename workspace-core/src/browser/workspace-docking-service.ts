@@ -47,7 +47,10 @@ export class WorkspaceDockingService {
         return this.registry.getOpenInstances(panelTypeId);
     }
 
-    /** Instance ids owned by a plugin, across all of its panel types. */
+    /**
+     * Instance ids of panel types a plugin registered, host panels included.
+     * For the closable subset see {@link closePanelsByOwner}.
+     */
     getOpenInstancesByOwner(owner: string): readonly string[] {
         return this.registry.getOpenInstancesByOwner(owner);
     }
@@ -63,11 +66,16 @@ export class WorkspaceDockingService {
     }
 
     /**
-     * Closes every panel instance a plugin opened. Called by the plugin runtime
-     * during disposal so a disabled plugin can never leave orphan widgets.
+     * Closes every panel instance the plugin itself owns.
+     *
+     * Called by the plugin runtime during disposal so a disabled plugin can never
+     * leave orphan plugin widgets. Host-capability panels are intentionally left
+     * open: they were created by host code, the host restores them, and they are
+     * user state the host has taken responsibility for. Unloading the plugin
+     * withdraws its panel *type* and commands, not the terminal the user is in.
      */
     async closePanelsByOwner(owner: string): Promise<void> {
-        for (const instanceId of this.getOpenInstancesByOwner(owner)) {
+        for (const instanceId of this.registry.getPluginOwnedInstancesByOwner(owner)) {
             try {
                 await this.closePanel(instanceId);
             } catch (error) {

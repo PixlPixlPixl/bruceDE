@@ -88,7 +88,8 @@ export class PluginFrontendHost {
 
     async unload(pluginId: string): Promise<void> {
         // Close owned panels before the fiber drops the registrations that
-        // describe them, so the shell can still resolve each widget.
+        // describe them, so the shell can still resolve each widget. Panels
+        // created through a host capability are host-owned and stay open.
         await this.options.docking.closePanelsByOwner(pluginId);
         this.kernel.releaseOwner(pluginId);
         await this.manager.unload(pluginId);

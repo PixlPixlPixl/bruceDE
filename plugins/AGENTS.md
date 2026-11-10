@@ -180,6 +180,30 @@ Available today: `HOST_PANEL_CAPABILITIES.terminal` (`brucede.terminal`) — the
 host's native terminal, the same widget the built-in `Terminal: New Terminal`
 command creates. New capabilities are added host-side; a plugin cannot define one.
 
+### Who owns what
+
+- **The host owns the factory.** A capability factory is contributed by the host's
+  Theia integration, never by a plugin, and it lives for the host's lifetime. You
+  can only *request* that the host create or expose a panel. A plugin must never
+  register, replace or dispose a host factory.
+- **The host owns what it creates.** A panel produced through a capability belongs
+  to the host and to the user. Disabling your plugin removes your commands, your
+  panel *type* and your services/events, and closes panels your plugin owns. It
+  does **not** destroy host-capability resources — a running terminal stays open
+  and the host restores it on the next launch. Never assume unloading your plugin
+  tears down host-created state.
+- **Exactly one restoration owner per widget.** Panel widgets your plugin builds
+  are restored by the workspace plugin-panel mechanism. Widgets built by a host
+  capability are restored by their original Theia factory. The same widget is
+  never registered under both. Do not try to make the two look uniform in
+  `plugin.json` or in your code.
+
+Future note: a layout-level ownership marker only becomes worthwhile if BruceDE
+introduces a kind of panel whose **UI and lifecycle genuinely belong to a plugin**
+and must vanish completely when that plugin is disabled. Host-capability panels
+are the opposite case — host UI, host lifecycle — so they deliberately have no
+marker. Do not add one for them.
+
 ## Services and events
 
 One registry per side (renderer, backend), shared across plugins and keyed by
@@ -209,7 +233,8 @@ It throws in backend code — backend plugins use `get` in-process.
    it must not open panels. Only a user action opens a panel.
 3. **Dispose everything you start.** Register watchers/timers/processes/listeners
    via `onDispose` (or the disposer `provide`/`on`/`register` return). Cordis tears
-   down the fiber, but it cannot see raw Node handles.
+   down the fiber, but it cannot see raw Node handles. What the host started
+   through a capability is not yours to dispose.
 4. **Keep frontend and backend split.** Node APIs only in `src/backend`.
 5. **Never import Theia internals to fake host UI.** If you need a terminal or
    another native surface, adopt a host capability. Bundling `@theia/*` or

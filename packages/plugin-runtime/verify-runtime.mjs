@@ -29,6 +29,12 @@ const { HOST_PANEL_CAPABILITIES } = await import(
 const { HOST_MODULES } = await import(
     path.join(root, 'workspace-core/lib/common/plugin-host-protocol.js')
 );
+const {
+    HOST_PANEL_CAPABILITY_PATTERN,
+    HostPanelFactoryRegistry
+} = await import(
+    path.join(root, 'workspace-core/lib/browser/host-panels/host-panel-factory-registry.js')
+);
 
 let failures = 0;
 function check(label, condition, detail) {
@@ -172,6 +178,99 @@ check(
     'host module specifier missing'
 );
 
+console.log('host panel factory registry');
+const sampleWidget = { id: '', title: { label: '', caption: '' } };
+const duplicateFirst = { id: '', title: { label: '', caption: '' } };
+const duplicateSecond = { id: '', title: { label: '', caption: '' } };
+const hostRegistry = new HostPanelFactoryRegistry({
+    getContributions: () => [
+        {
+            capabilityId: 'brucede.terminal',
+            label: 'Terminal',
+            createPanel: () => sampleWidget
+        },
+        { capabilityId: '@theia/terminal', label: 'bad', createPanel: () => sampleWidget },
+        {
+            capabilityId: 'brucede.duplicate',
+            label: 'first wins',
+            createPanel: () => duplicateFirst
+        },
+        {
+            capabilityId: 'brucede.duplicate',
+            label: 'second ignored',
+            createPanel: () => duplicateSecond
+        }
+    ]
+});
+check('collects a contributed capability', hostRegistry.has('brucede.terminal'));
+check(
+    'ignores a contributed id that looks like a module path',
+    !hostRegistry.has('@theia/terminal'),
+    hostRegistry.list().map(entry => entry.capabilityId).join(', ')
+);
+const duplicatePanel = await hostRegistry.create('brucede.duplicate', {
+    capabilityId: 'brucede.duplicate',
+    instanceId: 'instance-duplicate'
+});
+check('keeps the first factory for a duplicated capability', duplicatePanel === duplicateFirst);
+const created = await hostRegistry.create('brucede.terminal', {
+    capabilityId: 'brucede.terminal',
+    instanceId: 'instance-1'
+});
+check('builds a panel through the capability', created === sampleWidget);
+try {
+    await hostRegistry.create('brucede.missing', { capabilityId: 'brucede.missing', instanceId: 'x' });
+    check('reports an unknown capability instead of faking a panel', false);
+} catch (error) {
+    check('reports an unknown capability instead of faking a panel', String(error.message).includes('not available'));
+}
+try {
+    hostRegistry.register({ capabilityId: 'brucede.other', label: 'x', createPanel: () => sampleWidget });
+    check('late registration validates the id shape', true);
+} catch (error) {
+    check('late registration validates the id shape', false, error.message);
+}
+try {
+    hostRegistry.register({ capabilityId: 'brucede/other', label: 'x', createPanel: () => sampleWidget });
+    check('late registration refuses a path-like id', false);
+} catch {
+    check('late registration refuses a path-like id', true);
+}
+
+console.log('host capability wiring is host-owned');
+const moduleSource = await readSource('workspace-core/src/browser/workspace-core-frontend-module.ts');
+check(
+    'the terminal capability is bound by the host extension, not by a plugin',
+    moduleSource.includes('bind(HostPanelFactory).toService(TerminalHostPanelFactory)'),
+    'binding missing from workspace-core frontend module'
+);
+const pluginSources = await collectPluginSources();
+check(
+    'no plugin registers, replaces or disposes a host panel factory',
+    !pluginSources.some(source => source.includes('HostPanelFactory')),
+    'plugin source references HostPanelFactory'
+);
+const terminalBundle = await readSource('plugins/terminal/dist/frontend.js');
+check(
+    'the terminal plugin only requests the capability',
+    terminalBundle.includes('registerHostPanel') && !terminalBundle.includes('TerminalHostPanelFactory'),
+    'terminal bundle builds its own factory'
+);
+
+console.log('plugin disable never destroys host-owned panels');
+const dockingSource = await readSource('workspace-core/src/browser/workspace-docking-service.ts');
+check(
+    'closePanelsByOwner closes only plugin-owned instances',
+    dockingSource.includes('getPluginOwnedInstancesByOwner'),
+    'docking service closes host-capability panels'
+);
+const registrySource = await readSource('workspace-core/src/browser/workspace-panel-registry.ts');
+check(
+    'the panel registry marks host-capability panels',
+    registrySource.includes('isHostPanelType') && registrySource.includes('hostPanel'),
+    'hostPanel distinction missing from the panel registry'
+);
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);
 
@@ -217,6 +316,46 @@ async function writeDependencyFixture() {
     return pluginsRoot;
 }
 
+/**
+ * Reads a repo-relative file. Used only for structural invariants that cannot be
+ * expressed by importing the browser modules (they need a DOM).
+ */
+async function readSource(relativePath) {
+    return fs.readFile(path.join(root, relativePath), 'utf8');
+}
+
+/** Concatenates every plugin source file so plugin-wide rules can be asserted. */
+async function collectPluginSources() {
+    const directories = await fs.readdir(path.join(root, 'plugins'), { withFileTypes: true });
+    const sources = [];
+    for (const entry of directories) {
+        if (entry.isDirectory()) {
+            sources.push(await readTree(path.join(root, 'plugins', entry.name, 'src')));
+        }
+    }
+    return sources;
+}
+
+async function readTree(directory) {
+    let collected = '';
+    let entries;
+    try {
+        entries = await fs.readdir(directory, { withFileTypes: true });
+    } catch {
+        return collected;
+    }
+    for (const entry of entries) {
+        const child = path.join(directory, entry.name);
+        if (entry.isDirectory()) {
+            collected += await readTree(child);
+        } else if (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) {
+            collected += await fs.readFile(child, 'utf8');
+        }
+    }
+    return collected;
+}
+
+/** True when a plugin bundle embeds Theia/xterm internals. */
 function term_source_has_theia(source) {
     return ['xterm', '@theia/terminal', 'TerminalWidget'].some(token => source.includes(token));
 }

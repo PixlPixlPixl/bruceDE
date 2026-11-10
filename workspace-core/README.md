@@ -87,6 +87,30 @@ Plugins reach it only through `api.panels.registerHostPanel` /
 `api.panels.hasHostCapability`. The container, `TerminalService`, `WidgetManager`
 and raw widget instances are never exposed.
 
+### Factory lifetime and resource ownership
+
+Factory bindings live in this extension's frontend module, so the catalog exists
+for the host's whole lifetime — it is not created, owned or disposed by any
+plugin. A plugin can only ask for a panel; it cannot register a capability. That
+is what keeps a restored terminal restorable after the plugin that exposed it has
+been disabled or uninstalled.
+
+Unloading a plugin therefore releases its contributions — commands, panel types,
+services and events — and closes the panels it owns (`closePanelsByOwner`, which
+filters through `getPluginOwnedInstancesByOwner`). Instances created through a
+host capability are **host-owned**: `WorkspacePanelRegistry.isHostPanelType`
+marks them, they stay open, and the plugin's disablement never destroys them.
+
+Restoration authority stays single-owner:
+
+- plugin-built panels are registered under `bruce.workspace.panel` and restored by
+  the workspace mechanism;
+- host-capability panels are registered only under their original Theia factory
+  (`terminal`) and restored by Theia.
+
+The same widget is never registered under both, so persistence and ownership can
+never disagree.
+
 ### Terminal placement
 
 `CanvasApplicationShell` has no bottom panel, but `@theia/terminal` sends panel

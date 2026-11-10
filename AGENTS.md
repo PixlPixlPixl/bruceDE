@@ -24,7 +24,7 @@ All plugins are **trusted native code**. Frontend modules run directly in the Th
 3. Resolve plugin dependencies through Cordis. Missing dependencies or failed activation should be reported without silently opening a default workspace.
 4. Import the frontend ESM bundle into the existing renderer and the backend ESM bundle into the existing Node backend. These are normal host-context imports, not isolated runtimes.
 5. Adapt each module's `activate(api)` entrypoint into a Cordis-managed plugin Fiber. Contributions (panels, services, commands, listeners, timers, watchers) must be registered through disposable effects.
-6. When disabled/uninstalled, dispose the Fiber, unregister its services/events/commands, close every panel instance owned by that plugin, and release watchers/timers/processes it started. Closing a panel is not unloading its plugin.
+6. When disabled/uninstalled, dispose the Fiber, unregister its services/events/commands, close every panel instance the plugin owns, and release watchers/timers/processes it started. Resources the host created through a host panel capability stay host-owned: unloading a plugin withdraws its contributions, it does not destroy user state the host has taken responsibility for. Closing a panel is not unloading its plugin.
 7. Cordis disposal cleans plugin resources, but native ESM module records may remain cached. Do not promise true code-unload or safe in-place binary replacement; use reload/restart when a module cannot be replaced safely.
 
 ## Plugin communication
@@ -43,6 +43,7 @@ All plugins are **trusted native code**. Frontend modules run directly in the Th
 - Use native Theia/Lumino widgets for dockable panels. A webview may render web content inside a panel, but it is not a plugin isolation mechanism.
 - Native host functionality reaches plugins only through curated **host panel capabilities** (`brucede.terminal`). Capability ids are stable contracts, never module paths or Theia class names. Never expose the DI container, `WidgetManager`, host services such as `TerminalService`, raw widget instances, or a general-purpose widget factory to plugins.
 - Every path that opens the same kind of native panel must use the same host code. Do not leave a built-in command pointing at a region the canvas does not have.
+- Capability factories are contributed by host Theia integrations and live for the host's lifetime; a plugin only requests a panel. Exactly one component restores a given widget — the workspace plugin-panel mechanism for plugin-built panels, the original Theia factory for host-capability panels. Never register the same widget under both.
 - Plugin entrypoints are ESM bundles. Keep frontend and backend entrypoints separate; only backend code may rely on Node APIs.
 - Keep Cordis internal to `plugin-runtime`; plugin authors consume `@brucede/plugin-api`.
 - Plugin registration must not prescribe a dock location. Only the user or an explicit user action chooses placement.
