@@ -9,7 +9,7 @@ The first-party Theia extension that provides BruceDE's user-controlled workspac
 - Registers panel types without automatically opening them.
 - Exposes WorkspacePanelRegistry, WorkspaceDockingService and the host services to plugins.
 - Persists the panel layout across sessions through theia's layout restorer.
-- Includes temporary demo commands to verify splitting and tab docking.
+- Ships no demo panels or demo commands: every panel comes from a plugin.
 
 Theia's ApplicationShell mainPanel is already a multiple-document TheiaDockPanel. This extension changes the root shell layout rather than implementing another docking engine.
 
@@ -21,15 +21,16 @@ From the repository root:
     npm run build:electron
     npm run start:electron
 
-Press F1 and run: Workspace: Open docking demo layout.
-This creates three temporary panels. They can then be dragged, resized, split, or combined into tabs.
+The workspace starts empty. Press F1 and run a plugin command:
 
-The individual demo commands are:
-- Workspace: Open demo terminal panel
-- Workspace: Open demo agent panel
-- Workspace: Open demo Git panel
+- `Terminal: New Terminal` — a real host terminal in the main DockPanel
+- `Files: Open Browser` — the file browser panel
+- `Git: Open Changes` — the Git panel
+- `Agent: Open Chat` — the ACP agent chat panel
+- `Plugins: Open Manager` — install/enable plugins and review the trust warning
 
-These are visual placeholders only. No terminal or agent process is started.
+Every command above belongs to a plugin under `plugins/`. The host has no
+built-in panels of its own.
 
 ## Contribute a panel from another Theia extension
 

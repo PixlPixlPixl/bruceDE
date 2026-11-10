@@ -48,6 +48,8 @@ All plugins are **trusted native code**. Frontend modules run directly in the Th
 - Keep Cordis internal to `plugin-runtime`; plugin authors consume `@brucede/plugin-api`.
 - Plugin registration must not prescribe a dock location. Only the user or an explicit user action chooses placement.
 - Do not create test-only feature plugins. Early plugins should implement real basic functionality.
+- Ship no demo panels, demo commands or placeholder widgets in the host either. If a surface exists in the UI it must be a real implementation.
+- The application defaults to the dark theme. Host and plugin styling uses the `--theia-*` CSS variables; hardcoded light colors are a bug.
 
 ## Direction
 

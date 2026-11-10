@@ -15,6 +15,7 @@ import type {
 } from '@brucede/plugin-api';
 import type { CommandRegistry } from '@theia/core/lib/common/command';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
+import type { Message } from '@theia/core/lib/browser/widgets/widget';
 import type { DisposerBag } from '@brucede/plugin-runtime';
 import { PluginEventBus, PluginServiceRegistry } from '../../common/plugin-registries.js';
 import { WorkspaceDockingService } from '../workspace-docking-service.js';
@@ -25,11 +26,23 @@ import type { HostPanelFactoryRegistry } from '../host-panels/host-panel-factory
 // semantics; re-exported here because the renderer kernel is their public home.
 export { PluginEventBus, PluginServiceRegistry };
 
-/** A widget whose body is a host-rendered React element. */
+/**
+ * A widget whose body is a host-rendered React element.
+ *
+ * `ReactWidget` only paints in `onUpdateRequest`, and nothing schedules one on
+ * its own: Lumino attaches the widget without asking for an update. Without the
+ * explicit `update()` below a plugin panel attaches as an empty node, which
+ * looks like a blank white panel.
+ */
 class HostReactWidget extends ReactWidget {
     constructor(private readonly elementFactory: () => React.ReactNode) {
         super();
         this.addClass('bruce-plugin-panel');
+    }
+
+    protected override onAfterAttach(msg: Message): void {
+        super.onAfterAttach(msg);
+        this.update();
     }
 
     protected render(): React.ReactNode {

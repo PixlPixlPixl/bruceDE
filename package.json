@@ -19,6 +19,7 @@
     "watch:electron": "lerna run --parallel watch --ignore browser-app"
   },
   "devDependencies": {
+    "@types/react-dom": "^19.3.0",
     "lerna": "^8.2.4"
   },
   "workspaces": [

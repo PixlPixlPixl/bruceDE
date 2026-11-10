@@ -336,6 +336,36 @@ check(
     missingNamespaces.join(', ')
 );
 
+console.log('renderer panels and app defaults');
+const kernelSource = await readSource('workspace-core/src/browser/plugin/plugin-kernel.ts');
+check(
+    'a plugin panel renders once it is attached',
+    /onAfterAttach[^]*this\.update\(\)/.test(kernelSource),
+    'HostReactWidget never requests a render: panels attach as blank nodes'
+);
+const managerWidgetSource = await readSource('workspace-core/src/browser/plugin/plugin-manager-widget.ts');
+check(
+    'the plugin manager widget declares its shell id at construction time',
+    /this\.id = PluginManagerWidget\.ID;/.test(managerWidgetSource)
+        && !/onAfterAttach[^]*this\.id = /.test(managerWidgetSource),
+    'a widget without an id is silently refused by ApplicationShell.addWidget'
+);
+const hostSources = await collectHostSources();
+check(
+    'the host ships no demo panels or demo commands',
+    !hostSources.includes('bruce.demo.') && !hostSources.includes('WorkspaceDemoContribution'),
+    'a demo contribution is still registered'
+);
+for (const app of ['electron-app', 'browser-app']) {
+    const manifest = await readJsonSource(`${app}/package.json`);
+    const config = manifest.theia?.frontend?.config ?? {};
+    check(
+        `${app} defaults to the dark theme`,
+        config.defaultTheme === 'dark' && config.preferences?.['workbench.colorTheme'] === 'dark',
+        `defaultTheme=${config.defaultTheme} preferences=${JSON.stringify(config.preferences)}`
+    );
+}
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);
 
@@ -385,6 +415,32 @@ async function writeDependencyFixture() {
  * Reads a repo-relative file. Used only for structural invariants that cannot be
  * expressed by importing the browser modules (they need a DOM).
  */
+async function readJsonSource(relativePath) {
+    try {
+        return JSON.parse(await readSource(relativePath));
+    } catch (error) {
+        check(`${relativePath} is valid JSON`, false, String(error));
+        return {};
+    }
+}
+
+/** Concatenates workspace-core's TypeScript sources so host-wide rules can be asserted. */
+async function collectHostSources() {
+    const chunks = [];
+    async function walk(directory) {
+        for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+            const full = path.join(directory, entry.name);
+            if (entry.isDirectory()) {
+                await walk(full);
+            } else if (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) {
+                chunks.push(await fs.readFile(full, 'utf8'));
+            }
+        }
+    }
+    await walk(path.join(root, 'workspace-core/src'));
+    return chunks.join('\n');
+}
+
 async function readSource(relativePath) {
     return fs.readFile(path.join(root, relativePath), 'utf8');
 }

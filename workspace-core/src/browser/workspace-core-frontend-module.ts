@@ -22,7 +22,6 @@ import { WorkspacePanelWidgetFactory } from './workspace-panel-factory.js';
 import { WorkspaceDockingService } from './workspace-docking-service.js';
 import { WorkspaceSelectionService } from './workspace-selection-service.js';
 import { WorkspaceResourceService } from './workspace-resource-service.js';
-import { WorkspaceDemoContribution } from './workspace-demo-contribution.js';
 import {
     PLUGIN_HOST_PATH,
     PLUGIN_SERVICE_RPC_PATH,
@@ -58,8 +57,6 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(WorkspaceDockingService).toSelf().inSingletonScope();
     bind(WorkspaceSelectionService).toSelf().inSingletonScope();
     bind(WorkspaceResourceService).toSelf().inSingletonScope();
-    bind(WorkspaceDemoContribution).toSelf().inSingletonScope();
-    bind(CommandContribution).toService(WorkspaceDemoContribution);
 
     // Plugin host: shared registries, the manager, and its UI/commands.
     bind(PluginServiceRegistry).toSelf().inSingletonScope();

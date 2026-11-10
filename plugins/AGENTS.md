@@ -246,9 +246,15 @@ It throws in backend code — backend plugins use `get` in-process.
    another native surface, adopt a host capability. Bundling `@theia/*` or
    `xterm` into a plugin produces duplicate containers and widgets the shell
    cannot adopt — the bundler allowlist will not link them anyway.
-6. **Build real functionality.** No test-only or placeholder plugins; a scaffold
-   must exercise the real contract and then be completed.
-7. **Never promise code unload.** Native ESM module records may stay cached;
+6. **Build real functionality.** No test-only, placeholder or demo plugins, and
+   no demo panels dressed up as features; a scaffold must exercise the real
+   contract and then be completed.
+7. **Theme with host variables.** The application defaults to the dark theme
+   (`theia-dark`), so hardcoded colors break it. Style with
+   `var(--theia-editor-background)`, `var(--theia-editor-foreground)`,
+   `var(--theia-descriptionForeground)`, `var(--theia-panel-border)` and friends;
+   a literal `#fff` or `white` background is a bug, not a default.
+8. **Never promise code unload.** Native ESM module records may stay cached;
    reload/restart is the answer when a module cannot be replaced safely.
 
 ## Checklist before you finish
@@ -257,7 +263,11 @@ It throws in backend code — backend plugins use `get` in-process.
       bundles under `dist/`
 - [ ] `npm run build:plugins` succeeds; `dist/` not committed
 - [ ] plugin appears in `Plugins: Open Plugin Manager` with no diagnostics
-- [ ] its open command docks a panel into the shared main area
+- [ ] its open command docks a panel into the shared main area, and the panel
+      paints content (a widget only renders when `update()` is requested —
+      `host.createReactWidget` already does this on attach; call `widget.update()`
+      yourself if you replace that path)
+- [ ] styles resolve under the dark theme: no hardcoded light colors
 - [ ] native panels go through `registerHostPanel`, not a bundled Theia copy
 - [ ] disabling it closes every panel it opened and leaves no orphan commands
 - [ ] reopening the app restores panels the user left open

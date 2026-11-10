@@ -19,12 +19,24 @@
     "@theia/workspace": "1.77.0",
     "workspace-core": "0.1.0"
   },
-  "devDependencies": { "@theia/cli": "1.77.0" },
+  "devDependencies": {
+    "@theia/cli": "1.77.0"
+  },
   "scripts": {
     "bundle": "npm run rebuild && theia build --mode development",
     "rebuild": "theia rebuild:browser --cacheRoot ..",
     "start": "theia start",
     "watch": "npm run rebuild && theia build --watch --mode development"
   },
-  "theia": { "target": "browser" }
+  "theia": {
+    "target": "browser",
+    "frontend": {
+      "config": {
+        "defaultTheme": "dark",
+        "preferences": {
+          "workbench.colorTheme": "dark"
+        }
+      }
+    }
+  }
 }

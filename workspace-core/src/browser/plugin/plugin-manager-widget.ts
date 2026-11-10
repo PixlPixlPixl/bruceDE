@@ -24,10 +24,16 @@ export class PluginManagerWidget extends ReactWidget {
         @inject(MessageService) protected readonly messages: MessageService
     ) {
         super();
+        // `ApplicationShell.addWidget` rejects a widget without an id, so the
+        // fixed id has to be set at construction time, not on attach.
+        this.id = PluginManagerWidget.ID;
+        this.title.label = PluginManagerWidget.LABEL;
+        this.title.caption = PluginManagerWidget.LABEL;
+        this.title.closable = true;
+        this.addClass('bruce-plugin-manager');
     }
 
     protected override onAfterAttach(): void {
-        this.addClass('bruce-plugin-manager');
         this.unsubscribe = this.manager.onDidChangeSnapshot(snapshot => {
             this.snapshot = snapshot;
             this.update();
