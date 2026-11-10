@@ -7,5 +7,11 @@
   "peerDependencies": {
     "@brucede/plugin-api": "0.1.0",
     "@brucede/ui-kit": "0.1.0"
+  },
+  "scripts": {
+    "build": "node ../../packages/plugin-build/build.mjs ."
+  },
+  "devDependencies": {
+    "@brucede/plugin-build": "0.1.0"
   }
 }

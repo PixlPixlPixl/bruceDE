@@ -18,7 +18,12 @@
     "prepare": "npm run build",
     "watch": "tsc -p tsconfig.json --watch"
   },
-  "theiaExtensions": [{ "frontend": "lib/browser/workspace-core-frontend-module" }],
+  "theiaExtensions": [
+    {
+      "frontend": "lib/browser/workspace-core-frontend-module",
+      "backend": "lib/node/workspace-core-backend-module"
+    }
+  ],
   "files": ["lib", "src"],
   "exports": {
     ".": "./lib/index.js",

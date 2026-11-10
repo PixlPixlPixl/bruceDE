@@ -1,0 +1,13 @@
+{
+  "name": "@brucede/plugin-build",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "esbuild-based bundler for BruceDE plugin frontend/backend entrypoints.",
+  "bin": {
+    "bruce-plugin-build": "./build.mjs"
+  },
+  "dependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

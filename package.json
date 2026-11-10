@@ -1,13 +1,17 @@
 {
   "private": true,
-  "engines": { "node": ">=18", "npm": ">=8" },
+  "engines": {
+    "node": ">=18",
+    "npm": ">=8"
+  },
   "scripts": {
     "build:plugin-api": "npm --prefix packages/plugin-api run build",
     "build:plugin-runtime": "npm --prefix packages/plugin-runtime run build",
     "build:plugin-packages": "npm run build:plugin-api && npm run build:plugin-runtime",
     "build:workspace-core": "npm run build:plugin-packages && npm --prefix workspace-core run build",
-    "build:browser": "npm run build:workspace-core && npm --prefix browser-app run bundle",
-    "build:electron": "npm run build:workspace-core && npm --prefix electron-app run bundle",
+    "build:plugins": "node packages/plugin-build/build-all.mjs",
+    "build:browser": "npm run build:workspace-core && npm run build:plugins && npm --prefix browser-app run bundle",
+    "build:electron": "npm run build:workspace-core && npm run build:plugins && npm --prefix electron-app run bundle",
     "prepare": "lerna run prepare",
     "postinstall": "theia check:theia-version",
     "start:browser": "npm --prefix browser-app start",
@@ -15,6 +19,14 @@
     "watch:browser": "lerna run --parallel watch --ignore electron-app",
     "watch:electron": "lerna run --parallel watch --ignore browser-app"
   },
-  "devDependencies": { "lerna": "^8.2.4" },
-  "workspaces": ["browser-app", "electron-app", "workspace-core", "packages/*", "plugins/*"]
+  "devDependencies": {
+    "lerna": "^8.2.4"
+  },
+  "workspaces": [
+    "browser-app",
+    "electron-app",
+    "workspace-core",
+    "packages/*",
+    "plugins/*"
+  ]
 }
