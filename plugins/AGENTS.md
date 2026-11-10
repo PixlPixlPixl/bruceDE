@@ -89,6 +89,15 @@ npm run start:electron
 Inside a plugin, `npm run build` should be
 `node ../../packages/plugin-build/build.mjs .`.
 
+The bundler does not typecheck. To do so, run `tsc` over the plugin sources
+before committing:
+
+```bash
+node node_modules/typescript/bin/tsc --noEmit --skipLibCheck --strict \
+  --jsx react --module esnext --moduleResolution bundler --target es2022 \
+  $(find plugins -name '*.ts' -o -name '*.tsx')
+```
+
 Frontend bundles leave the shared host modules external; the renderer rewrites
 those specifiers to the host's own instances at load time. **Never bundle your own
 React or Lumino** — import them from the host (`host.React`, `host.widgets`), or

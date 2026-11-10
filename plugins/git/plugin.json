@@ -16,6 +16,15 @@
         "id": "git.changes",
         "title": "Git"
       }
+    ],
+    "commands": [
+      {
+        "id": "bruce.git.open",
+        "title": "Git: Open Changes"
+      }
+    ],
+    "services": [
+      "git.repository"
     ]
   }
 }

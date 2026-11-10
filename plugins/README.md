@@ -82,7 +82,24 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
 
 ## Current plugins
 
-The four bundled plugins are scaffolds: each registers a real panel type and open command through this runtime so the contract is exercised end to end. Their actual feature work (terminal backend, agent session, filesystem listing, Git status) is the next step.
+- **File Browser** (`bruce.file-browser`) — directory tree over the host's
+  `workspace.resources` service, publishes selections through
+  `workspace.selection`. Its backend half provides `files.roots` so the renderer
+  can learn the process working directory.
+- **Git** (`bruce.git`) — backend half runs `git status --porcelain=v2` in the
+  user's work tree and provides `git.repository`; the panel reads it through
+  `api.services.remote` and republishes `git/changes-updated` in the renderer.
+- **Agent Chat** (`bruce.agent-chat`) — backend half speaks ACP (Agent Client
+  Protocol, JSON-RPC over stdio) to an installed agent CLI and provides
+  `agent.sessions`. Agents come from `BRUCEDE_ACP_AGENTS` (JSON array of
+  `{ id, name, command, args }`) or a small known-CLI list; the panel polls the
+  service because the host cannot push backend events across the RPC boundary.
+- **Terminal** (`bruce.terminal`) — still a scaffold. Embedding Theia's native
+  terminal requires host DI access (`TerminalService`, `WidgetManager`) and
+  `@theia/terminal` in the shared-module allowlist, neither of which the plugin
+  API exposes; the host's own `Terminal: New Terminal` command docks into a
+  `bottom` area that `CanvasApplicationShell` deliberately removes. Rendering a
+  pty in a custom emulator would be a custom shell, which is out of scope.
 
 ## Trust
 

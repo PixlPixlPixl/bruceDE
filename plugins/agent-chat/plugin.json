@@ -16,6 +16,15 @@
         "id": "agent-chat.conversation",
         "title": "Agent Chat"
       }
+    ],
+    "commands": [
+      {
+        "id": "bruce.agent-chat.open",
+        "title": "Agent: Open Chat"
+      }
+    ],
+    "services": [
+      "agent.sessions"
     ]
   }
 }

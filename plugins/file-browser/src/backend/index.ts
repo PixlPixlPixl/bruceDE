@@ -1,9 +1,20 @@
 import type { BackendPluginAPI } from '@brucede/plugin-api';
+import { FILE_ROOTS_SERVICE, type FileRoots, type FileRootsService } from '../shared.js';
 
 /**
- * Native Node backend entrypoint for file browser.
- * Register services/events here and dispose every resource with the plugin lifecycle.
+ * Backend half of the file browser.
+ *
+ * The panel itself is renderer code: it lists directories through the host's
+ * `workspace.resources` service. The only thing the renderer cannot learn on its
+ * own is where the process is running, so this plugin publishes the smallest
+ * possible service that answers that question.
  */
-export function activate(_api: BackendPluginAPI): void {
-    // Implement the real file browser backend services in this plugin package.
+export function activate(api: BackendPluginAPI): void {
+    const service: FileRootsService = {
+        roots(): FileRoots {
+            const cwd = api.workspace.cwd;
+            return { cwd, roots: [cwd] };
+        }
+    };
+    api.services.provide(FILE_ROOTS_SERVICE, service);
 }

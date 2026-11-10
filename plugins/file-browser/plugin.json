@@ -16,6 +16,15 @@
         "id": "files.browser",
         "title": "Files"
       }
+    ],
+    "commands": [
+      {
+        "id": "bruce.file-browser.open",
+        "title": "Files: Open Browser"
+      }
+    ],
+    "services": [
+      "files.roots"
     ]
   }
 }
