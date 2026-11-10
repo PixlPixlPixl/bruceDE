@@ -498,6 +498,22 @@ console.log('install and build scripts avoid Windows shims');
         shimCalls.length === 0,
         shimCalls.join(', ')
     );
+    const launcherSource = await readSource('scripts/start.mjs');
+    check(
+        'the launcher accepts --host and --port',
+        launcherSource.includes("'--host'") && launcherSource.includes("'--port'"),
+        'start:browser cannot be pointed at another interface'
+    );
+    check(
+        'the launcher maps --host onto the flag theia honours',
+        launcherSource.includes('--hostname'),
+        'Theia would ignore the requested bind address'
+    );
+    check(
+        'the launcher validates the port range',
+        launcherSource.includes('parsed > 65535'),
+        'an invalid port would reach the backend'
+    );
     const rootManifest = await readJsonSource('package.json');
     check(
         'the install hook compiles the local packages',

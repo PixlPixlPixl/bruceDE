@@ -10,6 +10,20 @@ npm run build:electron      # plugin bundles, then the app
 npm run start:electron
 ```
 
+The browser target binds `127.0.0.1:3000` by default. Arguments after `--` reach
+the launcher, so it can be exposed on another interface or port:
+
+```bash
+npm run start:browser                                  # http://localhost:3000
+npm run start:browser -- --port 8080                   # http://localhost:8080
+npm run start:browser -- --host 0.0.0.0 --port 8080    # reachable from the network
+```
+
+`--host` is accepted here and mapped to Theia's `--hostname` (which is what
+actually sets the bind address); `--port` is passed through. Any other option is
+forwarded unchanged to `theia start` (`--ssl`, `--log-level`, …), and the
+electron target accepts the same flags (`npm run start:electron -- --port 3001`).
+
 `npm ci`/`npm install` runs the root `postinstall`, which compiles the local
 packages in order (`@brucede/plugin-api` → `@brucede/plugin-runtime` →
 `workspace-core`). They are workspace packages, not published to npm, so their
