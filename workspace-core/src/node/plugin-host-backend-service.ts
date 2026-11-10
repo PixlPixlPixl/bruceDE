@@ -18,6 +18,7 @@ import { discoverPlugins, isUserPluginPath, toDescriptor, type DiscoveredPlugin 
 import { resolvePluginRoots } from './plugin-paths.js';
 import { PluginStateStore } from './plugin-state-store.js';
 import { PluginBackendRuntime } from './plugin-backend-runtime.js';
+import type { PluginServiceRegistry } from '../common/plugin-registries.js';
 
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
     '.js': 'text/javascript; charset=utf-8',
@@ -57,6 +58,16 @@ export class PluginHostBackendService implements BackendApplicationContribution,
                 error: message => this.logger.error(message)
             }
         });
+    }
+
+    /** Shared backend service registry, used by the RPC service bridge. */
+    get backendServices(): PluginServiceRegistry {
+        return this.runtime.services;
+    }
+
+    /** Service ids currently provided by backend plugins. */
+    backendServiceIds(): readonly string[] {
+        return this.runtime.services.ids();
     }
 
     /**
@@ -146,9 +157,22 @@ export class PluginHostBackendService implements BackendApplicationContribution,
         return {
             plugins: this.discovered.map(toDescriptor),
             trusted: this.discovered.filter(plugin => this.isTrusted(plugin.manifest.id)).map(p => p.manifest.id),
-            enabled: this.discovered.filter(plugin => this.state.isEnabled(plugin.manifest.id)).map(p => p.manifest.id),
+            enabled: this.discovered.filter(plugin => this.isEnabled(plugin)).map(p => p.manifest.id),
             diagnostics: this.diagnostics
         };
+    }
+
+    /**
+     * Built-in plugins start enabled: they ship with BruceDE and the user can
+     * still disable them. Third-party plugins stay off until the user accepts
+     * the full-system-access warning and opts in.
+     */
+    protected isEnabled(plugin: DiscoveredPlugin): boolean {
+        const override = this.state.enabledOverride(plugin.manifest.id);
+        if (override !== undefined) {
+            return override;
+        }
+        return !isUserPluginPath(plugin.directory);
     }
 
     protected isTrusted(pluginId: string): boolean {
@@ -175,7 +199,7 @@ export class PluginHostBackendService implements BackendApplicationContribution,
 
     protected async activateEnabledBackendPlugins(): Promise<void> {
         for (const plugin of this.discovered) {
-            if (!this.state.isEnabled(plugin.manifest.id) || !this.isTrusted(plugin.manifest.id)) {
+            if (!this.isEnabled(plugin) || !this.isTrusted(plugin.manifest.id)) {
                 continue;
             }
             await this.runtime.load(plugin);

@@ -11,15 +11,13 @@ export interface WorkspacePanelOpenOptions {
 /**
  * Opens panels only in the shared main DockPanel, never in fixed IDE areas.
  *
- * It also owns instance bookkeeping: every opened widget is traced back to the
- * panel type and therefore to the plugin that registered it. When a plugin
- * unloads, {@link closePanelsByOwner} closes exactly the instances it opened.
+ * Panels are created through {@link WorkspacePanelRegistry}, which goes through
+ * the host's `WidgetManager`. Instance bookkeeping therefore lives in the
+ * registry too, so panels re-created from a persisted layout are tracked exactly
+ * like panels the user opened in this session.
  */
 @injectable()
 export class WorkspaceDockingService {
-    /** Open widget id → panel type id. */
-    protected readonly openInstances = new Map<string, string>();
-
     constructor(
         @inject(ApplicationShell) protected readonly shell: ApplicationShell,
         @inject(WorkspacePanelRegistry) protected readonly registry: WorkspacePanelRegistry
@@ -35,11 +33,7 @@ export class WorkspaceDockingService {
             ref: options.ref,
             mode: options.mode
         });
-        this.openInstances.set(widget.id, panelTypeId);
-        widget.disposed.connect(() => {
-            this.openInstances.delete(widget.id);
-        });
-        this.shell.activateWidget(widget.id);
+        await this.shell.activateWidget(widget.id);
         return widget;
     }
 
@@ -50,27 +44,22 @@ export class WorkspaceDockingService {
 
     /** Instance ids of a panel type that are currently open. */
     getOpenInstances(panelTypeId: string): readonly string[] {
-        return Array.from(this.openInstances.entries())
-            .filter(([, typeId]) => typeId === panelTypeId)
-            .map(([instanceId]) => instanceId);
+        return this.registry.getOpenInstances(panelTypeId);
     }
 
     /** Instance ids owned by a plugin, across all of its panel types. */
     getOpenInstancesByOwner(owner: string): readonly string[] {
-        const ownedTypes = new Set(this.registry.getPanelTypesByOwner(owner));
-        return Array.from(this.openInstances.entries())
-            .filter(([, typeId]) => ownedTypes.has(typeId))
-            .map(([instanceId]) => instanceId);
+        return this.registry.getOpenInstancesByOwner(owner);
     }
 
     async closePanel(instanceId: string): Promise<void> {
         const widget = this.shell.getWidgetById(instanceId);
         if (!widget) {
-            this.openInstances.delete(instanceId);
+            this.registry.forgetInstance(instanceId);
             return;
         }
         await this.shell.closeWidget(instanceId);
-        this.openInstances.delete(instanceId);
+        this.registry.forgetInstance(instanceId);
     }
 
     /**

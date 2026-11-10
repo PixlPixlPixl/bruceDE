@@ -19,11 +19,11 @@ The runtime is implemented and covers the full contract plugins rely on:
 1. **Discovery** — the backend scans the built-in `plugins/` folder and `~/.brucede/plugins`, validating every `plugin.json` before importing anything (`workspace-core/src/node/plugin-discovery.ts`).
 2. **Frontend ESM loading** — bundles are served from the backend and dynamically imported in the renderer. Shared host modules (`react`, `@lumino/widgets`, Theia browser/common) resolve to the host's own instances, so plugin widgets are real Lumino widgets (`workspace-core/src/browser/plugin/`).
 3. **Cordis activation/disposal** — each plugin runs in its own Cordis fiber; unloading drains its disposers in reverse order (`packages/plugin-runtime/src/manager.ts`).
-4. **Panel ownership** — panels registered by a plugin are tracked by owner and closed automatically when the plugin unloads.
-5. **Theia RPC** — trust and enable state, discovery and asset URLs cross the frontend/backend boundary over Theia's existing RPC channel.
+4. **Panel ownership + layout persistence** — every panel instance is created through one host `WidgetManager` factory, so panels are tracked by owner *and* persisted by Theia's layout restorer. A plugin unload closes the panels it opened; a restart re-opens the ones the user left open (`workspace-core/src/browser/workspace-panel-factory.ts`).
+5. **Shared services, events and RPC** — services and typed events are shared by owner on both sides of the boundary, the host publishes `workspace.resources` and `workspace.selection`, and `api.services.remote` reaches backend-plugin services over Theia's existing RPC channel.
 6. **Plugin manager + trust warning** — third-party plugins require an explicit full-system-access confirmation before activation; built-in plugins are trusted by virtue of shipping with the app.
 
-Enable plugins from the command palette (`Plugins: Open Plugin Manager`) or the per-plugin enable/disable commands. Nothing is enabled by default, so the startup canvas stays empty.
+Built-in plugins are enabled by default so their panel types and commands are available; disabling one closes its panels and removes its contributions. Third-party plugins stay off until the user accepts the trust dialog. Either way the startup canvas is empty — enabled plugins register capabilities, they do not open panels.
 
 ### Writing a plugin
 
@@ -31,7 +31,7 @@ See [plugins/README.md](./plugins/README.md). Each plugin folder has a `plugin.j
 
 ## Repository layout
 
-- `workspace-core/`: blank canvas, docking, panel registry, plugin host (discovery, RPC, frontend loader, manager).
+- `workspace-core/`: blank canvas, docking, panel registry + widget factory, layout persistence, host services, plugin host (discovery, RPC bridge, frontend/backend loaders, manager).
 - `packages/plugin-api/`: stable plugin author API contracts.
 - `packages/plugin-runtime/`: Cordis plugin manager, manifest validation, disposal helpers.
 - `packages/plugin-build/`: esbuild bundler for plugin entrypoints.

@@ -9,13 +9,19 @@ import type {
     PanelHostTools,
     PanelOpenOptions,
     PluginDisposer,
-    PluginManifest
+    PluginManifest,
+    RemoteService
 } from '@brucede/plugin-api';
 import type { CommandRegistry } from '@theia/core/lib/common/command';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import type { DisposerBag } from '@brucede/plugin-runtime';
+import { PluginEventBus, PluginServiceRegistry } from '../../common/plugin-registries.js';
 import { WorkspaceDockingService } from '../workspace-docking-service.js';
 import { WorkspacePanelRegistry } from '../workspace-panel-registry.js';
+
+// The registries are framework-free so the Node backend shares the same
+// semantics; re-exported here because the renderer kernel is their public home.
+export { PluginEventBus, PluginServiceRegistry };
 
 /** A widget whose body is a host-rendered React element. */
 class HostReactWidget extends ReactWidget {
@@ -29,102 +35,21 @@ class HostReactWidget extends ReactWidget {
     }
 }
 
-/**
- * Services shared by every plugin in the renderer.
- *
- * One registry is used for all plugins so a plugin can consume another plugin's
- * service, and `provide` links each entry to its owner so unloading the owner
- * removes exactly its own contributions.
- */
-export class PluginServiceRegistry {
-    private readonly services = new Map<string, { readonly owner: string; readonly value: unknown }>();
-
-    provide<T>(owner: string, serviceId: string, service: T): PluginDisposer {
-        if (this.services.has(serviceId)) {
-            throw new Error(`Service already provided: ${serviceId}`);
-        }
-        this.services.set(serviceId, { owner, value: service });
-        return () => {
-            if (this.services.get(serviceId)?.owner === owner) {
-                this.services.delete(serviceId);
-            }
-        };
-    }
-
-    get<T>(serviceId: string): T {
-        const entry = this.services.get(serviceId);
-        if (!entry) {
-            throw new Error(`Unknown service: ${serviceId}`);
-        }
-        return entry.value as T;
-    }
-
-    has(serviceId: string): boolean {
-        return this.services.has(serviceId);
-    }
-
-    /** Removes every service a plugin provided. */
-    removeByOwner(owner: string): void {
-        for (const [serviceId, entry] of Array.from(this.services.entries())) {
-            if (entry.owner === owner) {
-                this.services.delete(serviceId);
-            }
-        }
-    }
-}
-
-/** Typed event bus shared by every plugin in the renderer. */
-export class PluginEventBus {
-    private readonly listeners = new Map<string, Set<{ owner: string; listener: (payload: unknown) => void | Promise<void> }>>();
-
-    on<T>(owner: string, eventName: string, listener: (payload: T) => void | Promise<void>): PluginDisposer {
-        const entry = { owner, listener: listener as (payload: unknown) => void | Promise<void> };
-        let set = this.listeners.get(eventName);
-        if (!set) {
-            set = new Set();
-            this.listeners.set(eventName, set);
-        }
-        set.add(entry);
-        return () => {
-            const current = this.listeners.get(eventName);
-            current?.delete(entry);
-            if (current && current.size === 0) {
-                this.listeners.delete(eventName);
-            }
-        };
-    }
-
-    emit<T>(eventName: string, payload: T): void {
-        for (const { listener } of this.listeners.get(eventName) ?? []) {
-            try {
-                void listener(payload);
-            } catch (error) {
-                // eslint-disable-next-line no-console
-                console.error(`[plugin-host] Listener for "${eventName}" threw:`, error);
-            }
-        }
-    }
-
-    removeByOwner(owner: string): void {
-        for (const [eventName, set] of Array.from(this.listeners.entries())) {
-            for (const entry of Array.from(set)) {
-                if (entry.owner === owner) {
-                    set.delete(entry);
-                }
-            }
-            if (set.size === 0) {
-                this.listeners.delete(eventName);
-            }
-        }
-    }
-}
-
 export interface PluginKernelOptions {
     readonly panelRegistry: WorkspacePanelRegistry;
     readonly docking: WorkspaceDockingService;
     readonly commands: CommandRegistry;
     readonly services: PluginServiceRegistry;
     readonly events: PluginEventBus;
+    /**
+     * Invokes a service provided by a backend plugin over Theia's RPC channel.
+     * When absent, `api.services.remote` reports that no bridge is configured.
+     */
+    readonly invokeRemote?: (
+        serviceId: string,
+        method: string,
+        args: readonly unknown[]
+    ) => Promise<unknown>;
 }
 
 const DOCK_MODES: Readonly<Record<DockMode, NonNullable<PanelOpenOptions['mode']>>> = {
@@ -213,7 +138,8 @@ export class PluginKernel {
                 return dispose;
             },
             get: <T>(serviceId: string) => services.get<T>(serviceId),
-            has: (serviceId: string) => services.has(serviceId)
+            has: (serviceId: string) => services.has(serviceId),
+            remote: <T>(serviceId: string): RemoteService<T> => this.remoteService(serviceId)
         };
 
         const pluginEvents: FrontendPluginAPI['events'] = {
@@ -241,8 +167,32 @@ export class PluginKernel {
     }
 
     /**
+     * Builds a proxy whose every method invocation becomes one RPC call into a
+     * backend plugin's service. Arguments and results must be JSON-serializable.
+     */
+    protected remoteService<T>(serviceId: string): RemoteService<T> {
+        const invoke = this.options.invokeRemote;
+        const proxy = new Proxy({}, {
+            get: (_target, property) => {
+                if (typeof property !== 'string') {
+                    return undefined;
+                }
+                return async (...args: readonly unknown[]): Promise<unknown> => {
+                    if (!invoke) {
+                        throw new Error(
+                            `Service "${serviceId}" is remote, but no plugin service bridge is configured.`
+                        );
+                    }
+                    return invoke(serviceId, property, args);
+                };
+            }
+        });
+        return proxy as RemoteService<T>;
+    }
+
+    /**
      * Releases host-side contributions for a plugin. Cordis disposers normally
-     * handle this; this is the belt-and-braces sweep for state keyed by owner.
+     * handle this; this is the belt-and-suspenders sweep for state keyed by owner.
      */
     releaseOwner(pluginId: string): void {
         this.options.services.removeByOwner(pluginId);

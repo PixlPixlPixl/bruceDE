@@ -8,11 +8,14 @@ import { ConfirmDialog } from '@theia/core/lib/browser/dialogs';
 import type { PluginManifest } from '@brucede/plugin-api';
 import {
     PluginHostClient,
+    PluginServiceBridge,
     type PluginDescriptor,
     type PluginHostSnapshot
 } from '../../common/plugin-host-protocol.js';
 import { WorkspaceDockingService } from '../workspace-docking-service.js';
 import { WorkspacePanelRegistry } from '../workspace-panel-registry.js';
+import { WorkspaceSelectionService } from '../workspace-selection-service.js';
+import { WorkspaceResourceService } from '../workspace-resource-service.js';
 import { PluginEventBus, PluginServiceRegistry } from './plugin-kernel.js';
 import { PluginFrontendHost } from './plugin-frontend-host.js';
 
@@ -51,6 +54,7 @@ export class PluginManager implements FrontendApplicationContribution {
     protected snapshot: PluginHostSnapshot | undefined;
     protected enabledIds = new Set<string>();
     protected readonly listeners = new Set<(snapshot: PluginHostSnapshot) => void>();
+    protected hostServiceDisposers: (() => void | Promise<void>)[] = [];
 
     constructor(
         @inject(PluginHostClient) protected readonly backend: PluginHostClient,
@@ -58,8 +62,11 @@ export class PluginManager implements FrontendApplicationContribution {
         @inject(WorkspaceDockingService) protected readonly docking: WorkspaceDockingService,
         @inject(PluginServiceRegistry) protected readonly services: PluginServiceRegistry,
         @inject(PluginEventBus) protected readonly events: PluginEventBus,
+        @inject(WorkspaceSelectionService) protected readonly selection: WorkspaceSelectionService,
+        @inject(WorkspaceResourceService) protected readonly resources: WorkspaceResourceService,
         @inject(CommandRegistry) protected readonly commands: CommandRegistry,
-        @inject(MessageService) protected readonly messages: MessageService
+        @inject(MessageService) protected readonly messages: MessageService,
+        @inject(PluginServiceBridge) protected readonly serviceBridge: PluginServiceBridge
     ) {
         this.frontend = new PluginFrontendHost({
             panelRegistry: this.panels,
@@ -67,6 +74,7 @@ export class PluginManager implements FrontendApplicationContribution {
             commands: this.commands,
             services: this.services,
             events: this.events,
+            invokeRemote: (serviceId, method, args) => this.serviceBridge.invoke(serviceId, method, args),
             onError: (pluginId, error) => {
                 void this.backend.reportError(pluginId, error instanceof Error ? error.message : String(error));
             }
@@ -75,12 +83,32 @@ export class PluginManager implements FrontendApplicationContribution {
 
     async onStart(_app: FrontendApplication): Promise<void> {
         await this.frontend.initialize();
+        // Host services are published *before* any plugin activates, so a plugin
+        // can consume `workspace.resources`/`workspace.selection` during its own
+        // `activate` instead of racing the host's startup.
+        this.installHostServices();
         await this.refresh();
         await this.activateEnabledPlugins();
     }
 
+    /** Publishes the host's own services under `bruce.workspace`. Idempotent. */
+    protected installHostServices(): void {
+        if (this.hostServiceDisposers.length > 0) {
+            return;
+        }
+        this.hostServiceDisposers = [this.resources.install(), this.selection.install()];
+    }
+
     onStop(): void {
         void this.frontend.unloadAll().finally(() => this.frontend.dispose());
+        for (const dispose of this.hostServiceDisposers.splice(0)) {
+            try {
+                void dispose();
+            } catch (error) {
+                // eslint-disable-next-line no-console
+                console.error('[plugin-host] Failed to release host services:', error);
+            }
+        }
     }
 
     getSnapshot(): PluginHostSnapshot | undefined {

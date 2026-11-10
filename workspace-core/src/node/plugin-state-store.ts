@@ -3,8 +3,8 @@ import * as path from 'path';
 import { resolveStateFile } from './plugin-paths.js';
 
 export interface PluginStateEntry {
-    readonly trusted: boolean;
-    readonly enabled: boolean;
+    readonly trusted?: boolean;
+    readonly enabled?: boolean;
 }
 
 interface PersistedShape {
@@ -19,6 +19,11 @@ interface PersistedShape {
  * plugin never activates until the user accepted the full-system-access
  * warning. Entries for plugins that are no longer discovered are pruned so a
  * replaced folder cannot inherit an old trust decision.
+ *
+ * `enabled` is tri-state on purpose. An absent flag means "the user never
+ * decided", which lets the host choose a sensible default per origin: built-in
+ * plugins ship with BruceDE and start enabled, third-party ones start disabled
+ * until the user opts in.
  */
 export class PluginStateStore {
     private state = new Map<string, PluginStateEntry>();
@@ -43,9 +48,17 @@ export class PluginStateStore {
         }
         const known = new Set(knownPluginIds);
         for (const [pluginId, entry] of Object.entries(parsed.plugins)) {
-            if (known.has(pluginId)) {
-                this.state.set(pluginId, { trusted: entry.trusted === true, enabled: entry.enabled === true });
+            if (!known.has(pluginId)) {
+                continue;
             }
+            const restored: { trusted?: boolean; enabled?: boolean } = {};
+            if (typeof entry.trusted === 'boolean') {
+                restored.trusted = entry.trusted;
+            }
+            if (typeof entry.enabled === 'boolean') {
+                restored.enabled = entry.enabled;
+            }
+            this.state.set(pluginId, restored);
         }
     }
 
@@ -57,16 +70,21 @@ export class PluginStateStore {
         return this.state.get(pluginId)?.trusted === true;
     }
 
+    /** Explicit enable decision, or `undefined` when the user never made one. */
+    enabledOverride(pluginId: string): boolean | undefined {
+        return this.state.get(pluginId)?.enabled;
+    }
+
     isEnabled(pluginId: string): boolean {
         return this.state.get(pluginId)?.enabled === true;
     }
 
     setTrusted(pluginId: string, trusted: boolean): void {
-        this.write(pluginId, { ...(this.state.get(pluginId) ?? { enabled: false }), trusted });
+        this.write(pluginId, { ...(this.state.get(pluginId) ?? {}), trusted });
     }
 
     setEnabled(pluginId: string, enabled: boolean): void {
-        this.write(pluginId, { ...(this.state.get(pluginId) ?? { trusted: false }), enabled });
+        this.write(pluginId, { ...(this.state.get(pluginId) ?? {}), enabled });
     }
 
     /** Drops state for plugins that are no longer present. */
@@ -120,8 +138,11 @@ function isPersistedShape(value: unknown): value is PersistedShape {
             return false;
         }
         const entryRecord = entry as Record<string, unknown>;
-        if (typeof entryRecord.trusted !== 'boolean' || typeof entryRecord.enabled !== 'boolean') {
-            return false;
+        for (const flag of ['trusted', 'enabled']) {
+            const value = entryRecord[flag];
+            if (value !== undefined && typeof value !== 'boolean') {
+                return false;
+            }
         }
     }
     return true;

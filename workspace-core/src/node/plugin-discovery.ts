@@ -2,7 +2,7 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import type { PluginManifest } from '@brucede/plugin-api';
 import { BRUCE_WORKSPACE_PLUGIN_ID } from '@brucede/plugin-api';
-import { PluginManifestError, validatePluginManifest } from '@brucede/plugin-runtime';
+import { PluginManifestError, satisfiesVersion, validatePluginManifest } from '@brucede/plugin-runtime';
 import {
     PLUGIN_ASSET_PREFIX,
     type PluginDescriptor,
@@ -153,29 +153,38 @@ async function resolveEntrypoints(
 }
 
 /**
- * Reports dependency ids that no discovered plugin satisfies. The host still
- * exposes the plugin so the manager can show the problem instead of silently
- * dropping it.
- */
-/**
- * Reports dependency ids that no discovered plugin satisfies. The host
- * workspace (`bruce.workspace`) is a first-class service, not a plugin, so it
- * is always considered available. The host still exposes the plugin so the
- * manager can show the problem instead of silently dropping it.
+ * Reports dependency ids that no discovered plugin satisfies, or that resolve
+ * to a plugin version outside the declared range.
+ *
+ * The host workspace (`bruce.workspace`) is a first-class service, not a
+ * plugin, so it is always considered available. A plugin with an unsatisfied
+ * dependency is still exposed so the manager can show the problem instead of
+ * silently dropping it.
  */
 function resolveCrossDependencies(
     plugins: readonly DiscoveredPlugin[],
     diagnostics: PluginDiagnostic[]
 ): void {
-    const satisfied = new Set<string>(plugins.map(plugin => plugin.manifest.id));
-    satisfied.add(BRUCE_WORKSPACE_PLUGIN_ID);
+    const byId = new Map<string, DiscoveredPlugin>(plugins.map(plugin => [plugin.manifest.id, plugin]));
     for (const plugin of plugins) {
-        for (const dependencyId of Object.keys(plugin.manifest.dependencies ?? {})) {
-            if (!satisfied.has(dependencyId)) {
+        for (const [dependencyId, range] of Object.entries(plugin.manifest.dependencies ?? {})) {
+            if (dependencyId === BRUCE_WORKSPACE_PLUGIN_ID) {
+                continue;
+            }
+            const dependency = byId.get(dependencyId);
+            if (!dependency) {
                 diagnostics.push({
                     pluginId: plugin.manifest.id,
                     directory: plugin.directory,
                     message: `Missing plugin dependency "${dependencyId}".`
+                });
+                continue;
+            }
+            if (!satisfiesVersion(dependency.manifest.version, range)) {
+                diagnostics.push({
+                    pluginId: plugin.manifest.id,
+                    directory: plugin.directory,
+                    message: `Plugin dependency "${dependencyId}" needs "${range}" but ${dependency.manifest.version} is installed.`
                 });
             }
         }

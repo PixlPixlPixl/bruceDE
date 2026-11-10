@@ -13,7 +13,7 @@ All plugins are **trusted native code**. Frontend modules run directly in the Th
 - `electron-app/`, `browser-app/`: Theia application targets. Electron is the primary desktop target.
 - `workspace-core/`: Permanent host infrastructure only: blank canvas, Lumino docking, panel ownership/placement, layout persistence, and host-to-plugin adapters. Do not put product features here.
 - `packages/plugin-api/`: Versioned, stable TypeScript contracts exposed to plugin authors. Keep Cordis and Theia implementation details behind this API where practical.
-- `packages/plugin-runtime/`: Cordis contexts/Fibers and the Cordis plugin loader. Frontend modules use Cordis core; the Node backend uses the filesystem/module loader. Cordis owns activation, dependency ordering, service/event lifecycle, and disposal.
+- `packages/plugin-runtime/`: Cordis contexts/Fibers and the Cordis plugin loader. Frontend and backend both run Cordis core; a backend entrypoint is imported from disk with a dynamic `import()` of a validated `file://` URL, and `@brucede/plugin-runtime/loader` exposes the Cordis `Loader` for resolution work that needs it. Cordis owns activation, dependency ordering, service/event lifecycle, and disposal.
 - `packages/ui-kit/`: Optional shared CSS tokens and reusable UI primitives. It must not constrain plugin authors; custom React/TSX, CSS, SVG, canvas, and native Theia widgets are allowed.
 - `plugins/<plugin-id>/`: One self-contained folder/package per feature. Each owns its manifest, package metadata, frontend/backend source, assets, and built bundles. Initial feature folders: terminal, agent-chat, file-browser, and git.
 
@@ -34,6 +34,7 @@ All plugins are **trusted native code**. Frontend modules run directly in the Th
 - Put cross-plugin data contracts in `plugin-api`; use stable IDs and URI-based resource identities.
 - Plugins must not import another plugin's implementation. File Browser and Git communicate through shared resource/selection services and events, not direct imports.
 - Frontend/backend communication crosses Theia's existing RPC boundary. Do not add another per-plugin process or sandbox.
+- Services and events are scoped per side: renderer plugins share one registry, backend plugins share another. A renderer plugin reaches a backend plugin's service through `api.services.remote` (the host's service bridge), not by opening its own channel.
 
 ## Stack and conventions
 

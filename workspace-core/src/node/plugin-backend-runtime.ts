@@ -1,6 +1,7 @@
 import { pathToFileURL } from 'url';
-import type { BackendPluginAPI, PluginManifest } from '@brucede/plugin-api';
+import type { BackendPluginAPI, PluginManifest, RemoteService } from '@brucede/plugin-api';
 import { CordisPluginManager, type DisposerBag, type PluginRuntimeState } from '@brucede/plugin-runtime';
+import { PluginEventBus, PluginServiceRegistry } from '../common/plugin-registries.js';
 import type { DiscoveredPlugin } from './plugin-discovery.js';
 
 export interface PluginBackendLogger {
@@ -36,6 +37,16 @@ export class PluginBackendRuntime {
 
     private readonly records = new Map<string, BackendRecord>();
 
+    /**
+     * One registry for the whole backend process, exactly like the renderer's.
+     * A per-plugin registry would make backend plugins invisible to each other.
+     *
+     * It is exposed because the RPC service bridge resolves remote calls
+     * through it.
+     */
+    readonly services = new PluginServiceRegistry();
+    private readonly events = new PluginEventBus();
+
     constructor(private readonly options: PluginBackendRuntimeOptions) { }
 
     /** Activates a discovered plugin's backend entrypoint, if it has one. */
@@ -56,7 +67,7 @@ export class PluginBackendRuntime {
         const record = await this.manager.load<BackendPluginAPI>({
             manifest,
             loadModule: () => importBackendModule(backendEntrypoint),
-            createApi: (_ctx, bag) => createBackendApi(manifest, plugin.directory, bag)
+            createApi: (_ctx, bag) => createBackendApi(manifest, plugin.directory, bag, this.services, this.events)
         });
         this.records.set(manifest.id, {
             state: record.state,
@@ -68,6 +79,10 @@ export class PluginBackendRuntime {
     }
 
     async unload(pluginId: string): Promise<void> {
+        // Drop owner-keyed state first: a service must stop being resolvable
+        // before the fiber that provided it is disposed.
+        this.services.removeByOwner(pluginId);
+        this.events.removeByOwner(pluginId);
         await this.manager.unload(pluginId);
         this.records.delete(pluginId);
     }
@@ -94,82 +109,43 @@ async function importBackendModule(absolutePath: string): Promise<unknown> {
 function createBackendApi(
     manifest: PluginManifest,
     directory: string,
-    bag: DisposerBag
+    bag: DisposerBag,
+    serviceRegistry: PluginServiceRegistry,
+    eventBus: PluginEventBus
 ): BackendPluginAPI {
-    const services = createServiceRegistry(bag);
-    const events = createEventBus(bag);
+    const owner = manifest.id;
     return {
         manifest,
         side: 'backend',
-        services,
-        events,
+        services: {
+            provide: <T>(serviceId: string, service: T) => {
+                const disposer = serviceRegistry.provide(owner, serviceId, service);
+                bag.add(disposer);
+                return disposer;
+            },
+            get: <T>(serviceId: string) => serviceRegistry.get<T>(serviceId),
+            has: (serviceId: string) => serviceRegistry.has(serviceId),
+            // The bridge carries renderer → backend calls only. A backend plugin
+            // consumes another backend plugin's service directly, in-process.
+            remote: <T>(serviceId: string): RemoteService<T> => {
+                throw new Error(
+                    `Service "${serviceId}" cannot be resolved remotely from the backend. `
+                    + 'Use api.services.get for backend services.'
+                );
+            }
+        },
+        events: {
+            on: <T>(eventName: string, listener: (payload: T) => void | Promise<void>) => {
+                const disposer = eventBus.on(owner, eventName, listener);
+                bag.add(disposer);
+                return disposer;
+            },
+            emit: <T>(eventName: string, payload: T) => eventBus.emit(eventName, payload)
+        },
         origin: { builtIn: !directory.includes('.brucede'), directory },
         workspace: { cwd: process.cwd(), root: process.cwd() },
         onDispose: disposer => {
             bag.add(disposer);
-        }
-    };
-}
-
-function createServiceRegistry(bag: DisposerBag): BackendPluginAPI['services'] {
-    const services = new Map<string, unknown>();
-    return {
-        provide: <T>(serviceId: string, service: T) => {
-            if (services.has(serviceId)) {
-                throw new Error(`Service already provided: ${serviceId}`);
-            }
-            services.set(serviceId, service);
-            const disposer = () => {
-                services.delete(serviceId);
-            };
-            bag.add(disposer);
-            return () => {
-                disposer();
-                bag.remove(disposer);
-            };
-        },
-        get: <T>(serviceId: string): T => {
-            if (!services.has(serviceId)) {
-                throw new Error(`Unknown service: ${serviceId}`);
-            }
-            return services.get(serviceId) as T;
-        },
-        has: (serviceId: string) => services.has(serviceId)
-    };
-}
-
-function createEventBus(bag: DisposerBag): BackendPluginAPI['events'] {
-    const listeners = new Map<string, Set<(payload: unknown) => void | Promise<void>>>();
-    return {
-        on: <T>(eventName: string, listener: (payload: T) => void | Promise<void>) => {
-            const typed = listener as (payload: unknown) => void | Promise<void>;
-            let set = listeners.get(eventName);
-            if (!set) {
-                set = new Set();
-                listeners.set(eventName, set);
-            }
-            set.add(typed);
-            const disposer = () => {
-                set!.delete(typed);
-                if (set!.size === 0) {
-                    listeners.delete(eventName);
-                }
-            };
-            bag.add(disposer);
-            return () => {
-                disposer();
-                bag.remove(disposer);
-            };
-        },
-        emit: <T>(eventName: string, payload: T) => {
-            for (const listener of listeners.get(eventName) ?? []) {
-                try {
-                    void listener(payload);
-                } catch (error) {
-                    // eslint-disable-next-line no-console
-                    console.error(`[plugin-host] Listener for "${eventName}" threw:`, error);
-                }
-            }
         }
     };
 }

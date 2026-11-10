@@ -6,6 +6,8 @@
  * rewriting, and Cordis activation/disposal without a DOM.
  */
 import path from 'node:path';
+import os from 'node:os';
+import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -17,6 +19,9 @@ const { validatePluginManifest, PluginManifestError, satisfiesVersion, CordisPlu
 const { discoverPlugins } = await import(path.join(root, 'workspace-core/lib/node/plugin-discovery.js'));
 const { rewriteHostModuleSpecifiers } = await import(
     path.join(root, 'workspace-core/lib/browser/plugin/host-modules.js')
+);
+const { PluginEventBus, PluginServiceRegistry } = await import(
+    path.join(root, 'workspace-core/lib/common/plugin-registries.js')
 );
 
 let failures = 0;
@@ -97,6 +102,36 @@ const failed = await manager.load({
 });
 check('import failure is reported as failed', failed.state === 'failed');
 
+console.log('dependency resolution');
+const fixtureRoot = await writeDependencyFixture();
+const fixture = await discoverPlugins([fixtureRoot]);
+check(
+    'reports a dependency whose version range is unsatisfied',
+    fixture.diagnostics.some(d => d.pluginId === 'bruce.needs-newer' && d.message.includes('^0.2.0')),
+    fixture.diagnostics.map(d => d.message).join(' | ')
+);
+check(
+    'accepts a dependency inside the declared range',
+    !fixture.diagnostics.some(d => d.pluginId === 'bruce.uses-alpha' && d.message.includes('dependency')),
+    fixture.diagnostics.map(d => d.message).join(' | ')
+);
+await fs.rm(path.dirname(fixtureRoot), { recursive: true, force: true });
+
+console.log('shared services and events');
+const services = new PluginServiceRegistry();
+const bus = new PluginEventBus();
+services.provide('bruce.alpha', 'alpha.api', { ping: () => 'pong' });
+check('a service is resolvable by id', services.get('alpha.api').ping() === 'pong');
+const received = [];
+bus.on('bruce.beta', 'workspace/selection-changed', payload => received.push(payload));
+bus.emit('workspace/selection-changed', 'file:///a.ts');
+check('an event reaches a listener registered by another owner', received.length === 1);
+services.removeByOwner('bruce.alpha');
+bus.removeByOwner('bruce.beta');
+check('unloading an owner removes its services', !services.has('alpha.api'));
+bus.emit('workspace/selection-changed', 'file:///b.ts');
+check('unloading an owner removes its listeners', received.length === 1);
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);
 
@@ -107,4 +142,37 @@ function throwsManifest(candidate) {
     } catch (error) {
         return error instanceof PluginManifestError;
     }
+}
+
+/**
+ * Writes three plugins into a temporary folder: one provider at `0.1.0`, one
+ * consumer inside its range, and one consumer whose range cannot be satisfied.
+ */
+async function writeDependencyFixture() {
+    const base = await fs.mkdtemp(path.join(os.tmpdir(), 'brucede-verify-'));
+    const pluginsRoot = path.join(base, 'plugins');
+    const writePlugin = async (folder, manifest) => {
+        const directory = path.join(pluginsRoot, folder);
+        await fs.mkdir(path.join(directory, 'dist'), { recursive: true });
+        await fs.writeFile(path.join(directory, 'dist', 'frontend.js'), 'export const boot = 1;\n');
+        await fs.writeFile(path.join(directory, 'plugin.json'), JSON.stringify(manifest, undefined, 2));
+    };
+    const common = {
+        name: 'Fixture',
+        version: '0.1.0',
+        apiVersion: 1,
+        entrypoints: { frontend: './dist/frontend.js' }
+    };
+    await writePlugin('alpha', { ...common, id: 'bruce.alpha' });
+    await writePlugin('uses-alpha', {
+        ...common,
+        id: 'bruce.uses-alpha',
+        dependencies: { 'bruce.alpha': '^0.1.0' }
+    });
+    await writePlugin('needs-newer', {
+        ...common,
+        id: 'bruce.needs-newer',
+        dependencies: { 'bruce.alpha': '^0.2.0' }
+    });
+    return pluginsRoot;
 }

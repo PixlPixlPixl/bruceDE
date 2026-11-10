@@ -9,6 +9,9 @@
 /** RPC path the frontend proxy talks to. */
 export const PLUGIN_HOST_PATH = '/services/bruce/plugin-host';
 
+/** RPC path of the renderer → backend plugin service bridge. */
+export const PLUGIN_SERVICE_RPC_PATH = '/services/bruce/plugin-services';
+
 /** URL prefix under which the backend serves plugin ESM bundles and assets. */
 export const PLUGIN_ASSET_PREFIX = '/brucede-plugin-assets';
 
@@ -122,3 +125,19 @@ export interface PluginHostClient {
 
 /** Inversify token used to inject the RPC proxy for {@link PluginHostClient}. */
 export const PluginHostClient = Symbol('PluginHostClient');
+
+/**
+ * Renderer → backend calls into services *backend plugins* provided.
+ *
+ * This is the only cross-boundary service path: it reuses Theia's existing
+ * channel, so no per-plugin process, socket or sandbox is introduced. Only
+ * JSON-serializable arguments and results are supported.
+ */
+export interface PluginServiceBridge {
+    /** Ids of every service currently provided by a backend plugin. */
+    listServices(): Promise<readonly string[]>;
+    invoke(serviceId: string, method: string, args: readonly unknown[]): Promise<unknown>;
+}
+
+/** Inversify token used to inject the RPC proxy for {@link PluginServiceBridge}. */
+export const PluginServiceBridge = Symbol('PluginServiceBridge');

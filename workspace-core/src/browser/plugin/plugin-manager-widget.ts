@@ -91,18 +91,22 @@ export class PluginManagerWidget extends ReactWidget {
             React.createElement('span', { className: 'bruce-plugin-id' }, ` ${plugin.id}@${plugin.version}`),
             plugin.builtIn ? React.createElement('span', { className: 'bruce-plugin-badge' }, ' built-in') : undefined,
             React.createElement('div', { className: 'bruce-plugin-actions' },
-                React.createElement(
-                    'button',
-                    {
-                        type: 'button',
-                        disabled: !plugin.builtIn && !trusted,
-                        title: trusted
-                            ? 'Full system access has been granted to this plugin.'
-                            : 'Accept the full-system-access warning to trust this plugin.',
-                        onClick: () => void this.toggleTrust(plugin.id, !trusted)
-                    },
-                    trusted ? 'Trusted' : 'Trust…'
-                ),
+                // Built-in plugins are trusted because they ship with the app; a
+                // trust toggle would only be able to revoke it, so it is not shown.
+                plugin.builtIn
+                    ? undefined
+                    : React.createElement(
+                          'button',
+                          {
+                              type: 'button',
+                              disabled: !trusted,
+                              title: trusted
+                                  ? 'Full system access has been granted to this plugin.'
+                                  : 'Accept the full-system-access warning to enable this plugin.',
+                              onClick: () => void this.toggleTrust(plugin.id, !trusted)
+                          },
+                          trusted ? 'Trusted' : 'Trust…'
+                      ),
                 React.createElement(
                     'button',
                     {

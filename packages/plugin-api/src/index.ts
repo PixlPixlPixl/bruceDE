@@ -12,6 +12,92 @@ export type PluginDisposer = () => void | Promise<void>;
 /** Identifiers that are always available from the host, never loaded as plugins. */
 export const BRUCE_WORKSPACE_PLUGIN_ID = 'bruce.workspace';
 
+/**
+ * Stable service ids. Host services are provided under
+ * `BRUCE_WORKSPACE_PLUGIN_ID` before any plugin activates; first-party feature
+ * plugins provide the rest.
+ *
+ * Service ids are part of the public contract: renaming one is a breaking
+ * change and requires an `apiVersion` bump.
+ */
+export const WORKSPACE_SERVICE_IDS = {
+    /** {@link WorkspaceResourcesService}: URI-based resource identity and metadata. */
+    resources: 'workspace.resources',
+    /** {@link WorkspaceSelectionService}: the user's current workspace selection. */
+    selection: 'workspace.selection',
+    /** Repository state provided by the Git plugin. */
+    gitRepository: 'git.repository',
+    /** Agent sessions provided by the agent-chat plugin. */
+    agentSessions: 'agent.sessions'
+} as const;
+
+/** Stable event names emitted through `api.events`. */
+export const WORKSPACE_EVENT_IDS = {
+    /** Payload: {@link ResourceSelection} or `undefined`. */
+    selectionChanged: 'workspace/selection-changed',
+    /** Payload: repository change set provided by the Git plugin. */
+    changesUpdated: 'git/changes-updated'
+} as const;
+
+/**
+ * Stable identity of a workspace resource.
+ *
+ * Renderer and backend refer to the same resource by the same string, so
+ * resource URIs must never be constructed ad hoc: use
+ * `WorkspaceResourcesService.fromPath` from the host.
+ */
+export type ResourceUri = string;
+
+/** Zero-based position inside a resource. */
+export interface ResourcePosition {
+    readonly line: number;
+    readonly character: number;
+}
+
+/** Half-open range inside a resource. */
+export interface ResourceRange {
+    readonly start: ResourcePosition;
+    readonly end: ResourcePosition;
+}
+
+/** A resource together with the ranges the user currently cares about. */
+export interface ResourceSelection {
+    readonly uri: ResourceUri;
+    readonly ranges: readonly ResourceRange[];
+}
+
+export type ResourceKind = 'file' | 'directory' | 'unknown';
+
+/** Metadata for one resource. */
+export interface ResourceStat {
+    readonly uri: ResourceUri;
+    readonly name: string;
+    readonly kind: ResourceKind;
+    readonly children?: readonly ResourceStat[];
+}
+
+/**
+ * Resource identity and metadata, provided by the host as
+ * {@link WORKSPACE_SERVICE_IDS.resources}.
+ */
+export interface WorkspaceResourcesService {
+    /** Absolute filesystem path → stable resource URI. */
+    fromPath(absolutePath: string): ResourceUri;
+    stat(uri: ResourceUri): Promise<ResourceStat | undefined>;
+    /** Direct children of a directory resource. */
+    list(uri: ResourceUri): Promise<readonly ResourceStat[]>;
+}
+
+/**
+ * Shared selection state, provided by the host as
+ * {@link WORKSPACE_SERVICE_IDS.selection}.
+ */
+export interface WorkspaceSelectionService {
+    get(): ResourceSelection | undefined;
+    set(selection: ResourceSelection | undefined): void;
+    onDidChange(listener: (selection: ResourceSelection | undefined) => void): PluginDisposer;
+}
+
 export interface PluginManifestContributionPanels {
     readonly id: string;
     readonly title: string;
@@ -97,16 +183,42 @@ export interface PanelDefinition {
 
 export interface PanelRegistryAPI {
     register(definition: PanelDefinition): PluginDisposer;
+    /**
+     * Opens a panel instance in the shared main DockPanel.
+     *
+     * Panels are created through the host's `WidgetManager`, so the shell can
+     * persist and restore them together with the rest of the workspace layout.
+     */
     open(panelId: string, options?: PanelOpenOptions): Promise<string>;
     close(instanceId: string): Promise<void>;
     /** Instance ids opened by this plugin that are still open. */
     getOpenInstances(): readonly string[];
 }
 
+/**
+ * A service that lives on the other side of the RPC boundary.
+ *
+ * Every method resolves asynchronously, because each call crosses Theia's
+ * backend channel. Arguments and results must be JSON-serializable.
+ */
+export type RemoteService<T> = {
+    readonly [K in keyof T]: T[K] extends (...args: infer A) => infer R
+        ? (...args: A) => Promise<Awaited<R>>
+        : never;
+};
+
 export interface ServiceRegistryAPI {
     provide<T>(serviceId: string, service: T): PluginDisposer;
     get<T>(serviceId: string): T;
     has(serviceId: string): boolean;
+    /**
+     * Resolves a service a *backend* plugin provided, from the renderer.
+     *
+     * The call travels over Theia's existing backend channel — no extra process
+     * or socket is opened. Calling this from a backend plugin throws, because
+     * the bridge is renderer → backend only.
+     */
+    remote<T>(serviceId: string): RemoteService<T>;
 }
 
 export interface PluginEventAPI {

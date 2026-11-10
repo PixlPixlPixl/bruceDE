@@ -31,11 +31,32 @@ npm run build:plugins
 - `api.panels.register({ id, title, createWidget })` — registers a panel **type**. `createWidget` receives `(instanceId, host)` where `host.React`, `host.widgets`, and `host.createReactWidget` are the host's own instances. Do not import React or Lumino directly: use `host` so widgets are the same classes the shell docks.
 - `api.panels.open(panelId)` / `api.panels.close(instanceId)` — opens/closes a panel in the shared main area. The host closes every instance a plugin opened when it unloads.
 - `api.commands.register({ id, title, execute })` — registers a Theia command.
-- `api.services.provide/get/has` — shared, cross-plugin services.
-- `api.events.on/emit` — typed, cross-plugin events.
+- `api.services.provide/get/has` — shared services on the plugin's own side of the boundary. One registry per side, keyed by owner; a plugin can consume another plugin's service and unloading the provider removes exactly its own entries.
+- `api.services.remote<T>(serviceId)` — a renderer plugin's typed view of a service a **backend** plugin provided. Each method call becomes one RPC call over Theia's existing channel, so arguments and results must be JSON-serializable. Calling it from a backend plugin throws; backend plugins use `get` in-process.
+- `api.events.on/emit` — typed events, also shared per side.
 - `api.onDispose(fn)` — extra cleanup.
 
 Returning a disposer from `activate` is optional; the host disposes everything the API registered regardless.
+
+## Host services
+
+Before any plugin activates, the host provides `workspace.resources` and `workspace.selection` under the `bruce.workspace` owner. Use them instead of reimplementing them:
+
+```ts
+const resources = api.services.get<WorkspaceResourcesService>(WORKSPACE_SERVICE_IDS.resources);
+const uri = resources.fromPath('/home/user/project/src/app.ts');
+const stat = await resources.stat(uri);
+
+const selection = api.services.get<WorkspaceSelectionService>(WORKSPACE_SERVICE_IDS.selection);
+selection.set({ uri, ranges: [{ start: { line: 0, character: 0 }, end: { line: 0, character: 0 } }] });
+api.events.on(WORKSPACE_EVENT_IDS.selectionChanged, next => { /* react */ });
+```
+
+Feature plugins provide the rest: `git.repository` and `agent.sessions` are reserved ids that the bundled feature plugins will fill in.
+
+## Layout and restart behavior
+
+Panels are opened into the shared main DockPanel and persisted by the host's layout restorer. Opening a panel is a user action; `activate` should register surfaces and commands, not open panels. When a plugin is disabled, the host closes every panel it opened and stops tracking them.
 
 Frontend bundles may also import these host modules directly; the bundler rewrites them to the host's instances at load time: `react`, `react-dom`, `@lumino/widgets`, `@lumino/signaling`, `@lumino/domutils`, `@lumino/coreutils`, `@theia/core/lib/browser`, `@theia/core/lib/common`, and `@theia/core/lib/browser/widgets/react-widget`. The canonical list lives in `workspace-core/src/common/plugin-host-protocol.ts`.
 
