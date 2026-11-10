@@ -100,9 +100,12 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
 
   Agents come from `BRUCEDE_AGENTS` (JSON array of
   `{ id, name, protocol?, command, args? }`, `protocol` defaults to `acp`;
-  `BRUCEDE_ACP_AGENTS` is still accepted under its old name) or a known list
-  containing Pi, Gemini CLI, Claude Code (ACP) and OpenCode. The panel polls the
-  service because the host cannot push backend events across the RPC boundary.
+  `BRUCEDE_ACP_AGENTS` is still accepted under its old name). Without
+  configuration, the built-in catalog is a **detection list, not a roster**: Pi,
+  Gemini CLI, Claude Code (ACP) and OpenCode are probed on `PATH`, and only the
+  ones actually installed are offered — the panel never shows a dead entry for an
+  agent that is not there. The panel polls the service because the host cannot
+  push backend events across the RPC boundary.
 
   Agent executables are resolved to a real path first: npm shims on Windows are
   `.cmd` files that cannot be passed to `CreateProcess`, so they are launched

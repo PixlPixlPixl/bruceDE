@@ -404,6 +404,17 @@ check(
     'a .cmd agent shim would fail with ENOENT on Windows'
 );
 check(
+    'the built-in agent catalog is a detection list, not a shipped roster',
+    agentChatBackend.includes('.filter(descriptor => descriptor.available)'),
+    'uninstalled agents would still appear as entries in the picker'
+);
+check(
+    'configured agents are listed even when their binary is missing',
+    agentChatBackend.includes('executableExists(candidate.command)')
+        && agentChatBackend.includes('if (configured) {'),
+    'an explicit configuration cannot report a missing agent'
+);
+check(
     'both protocols share one session bookkeeping path',
     agentChatBackend.includes('interface AgentLink') && agentChatBackend.includes('ensureStarted'),
     'the session logic is duplicated per protocol'

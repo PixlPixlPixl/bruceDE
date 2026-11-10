@@ -204,15 +204,16 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
             ? React.createElement(
                   'div',
                   { style: MUTED_STYLE },
-                  'No ACP agents configured. Set BRUCEDE_ACP_AGENTS to a JSON array of '
-                      + '{ id, name, command, args } entries, then reopen this panel.'
+                  'No agent CLI found. Install Pi (npm install -g @earendil-works/pi-coding-agent) '
+                      + 'or an ACP agent such as Gemini CLI, or set BRUCEDE_AGENTS to a JSON array of '
+                      + '{ id, name, protocol?, command, args? } entries, then reopen this panel.'
               )
             : undefined,
         selected && !selected.available
             ? React.createElement(
                   'div',
                   { style: MUTED_STYLE },
-                  `"${selected.command}" was not found on PATH. Install it or point BRUCEDE_ACP_AGENTS at it.`
+                  `"${selected.command}" was not found on PATH. Install it or point BRUCEDE_AGENTS at it.`
               )
             : undefined,
         error ? React.createElement('div', { style: ERROR_STYLE }, error) : undefined,

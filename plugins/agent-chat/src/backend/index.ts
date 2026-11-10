@@ -17,6 +17,11 @@ const MAX_ENTRIES = 400;
 /**
  * Agent CLIs this plugin knows how to drive.
  *
+ * This is a **detection list, not a shipped roster**: an entry only becomes an
+ * agent in the UI once its executable resolves on `PATH`, so the panel never
+ * offers an agent the user cannot run. Any ACP agent can also be added without a
+ * code change through `BRUCEDE_AGENTS`.
+ *
  * Two protocols are supported, because the ecosystem is not uniform: most agents
  * speak ACP, Pi speaks its own RPC mode and has no ACP mode. The handshake is the
  * real availability check; `available` only reports whether the binary resolves,
@@ -418,15 +423,26 @@ function requireSession(sessions: Map<string, LiveSession>, agentId: string): Li
  */
 function discoverAgents(): AgentDescriptor[] {
     const configured = readConfiguredAgents();
-    const candidates = configured ?? KNOWN_AGENTS;
-    return candidates.map(candidate => ({
+    if (configured) {
+        // An explicit configuration is the user's decision: list every entry, so
+        // a missing binary is reported instead of silently disappearing.
+        return configured.map(candidate => toDescriptor(candidate, executableExists(candidate.command)));
+    }
+    // Nothing configured: only agents that are actually installed are offered.
+    return KNOWN_AGENTS
+        .map(candidate => toDescriptor(candidate, executableExists(candidate.command)))
+        .filter(descriptor => descriptor.available);
+}
+
+function toDescriptor(candidate: AgentCandidate, available: boolean): AgentDescriptor {
+    return {
         id: candidate.id,
         name: candidate.name,
         protocol: candidate.protocol,
         command: candidate.command,
         args: candidate.args ?? [],
-        available: executableExists(candidate.command)
-    }));
+        available
+    };
 }
 
 function readConfiguredAgents(): AgentCandidate[] | undefined {
