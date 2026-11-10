@@ -1,0 +1,398 @@
+{
+  ".vscode/launch.json": {
+    "mtime": 1794263127.1175709,
+    "seen": 1794271929.923265,
+    "ast_hash": "e64c1ca24952477d95b973ce56a78249",
+    "semantic_hash": "e64c1ca24952477d95b973ce56a78249"
+  },
+  "browser-app/package.json": {
+    "mtime": 1794268619.9304583,
+    "seen": 1794271929.9232712,
+    "ast_hash": "8d625f497ee0d862eb7a6057b64a895b",
+    "semantic_hash": "8d625f497ee0d862eb7a6057b64a895b"
+  },
+  "electron-app/package.json": {
+    "mtime": 1794268619.9304583,
+    "seen": 1794271929.9232738,
+    "ast_hash": "7d60aa072e0e2d906a3700d3b8b2bc13",
+    "semantic_hash": "7d60aa072e0e2d906a3700d3b8b2bc13"
+  },
+  "lerna.json": {
+    "mtime": 1794263127.1165504,
+    "seen": 1794271929.9232755,
+    "ast_hash": "84aeae0467f17f77648932c8126759d3",
+    "semantic_hash": "84aeae0467f17f77648932c8126759d3"
+  },
+  "package.json": {
+    "mtime": 1794270745.8069134,
+    "seen": 1794271929.9232767,
+    "ast_hash": "f6f9d7b850d4687467eb689fe37e4b72",
+    "semantic_hash": "f6f9d7b850d4687467eb689fe37e4b72"
+  },
+  "packages/plugin-api/package.json": {
+    "mtime": 1794269581.0720203,
+    "seen": 1794271929.9232776,
+    "ast_hash": "8d67eb3b27d041abd769f0c048fd6567",
+    "semantic_hash": "8d67eb3b27d041abd769f0c048fd6567"
+  },
+  "packages/plugin-api/src/index.ts": {
+    "mtime": 1794269571.0782182,
+    "seen": 1794271929.9232788,
+    "ast_hash": "27db2c2d59f4e26bbed8d33ae411a70c",
+    "semantic_hash": "27db2c2d59f4e26bbed8d33ae411a70c"
+  },
+  "packages/plugin-api/tsconfig.json": {
+    "mtime": 1794268619.933136,
+    "seen": 1794271929.9232798,
+    "ast_hash": "eddeab0baeaf6678dcc4f941aa00c760",
+    "semantic_hash": "eddeab0baeaf6678dcc4f941aa00c760"
+  },
+  "packages/plugin-build/build-all.mjs": {
+    "mtime": 1794270766.247873,
+    "seen": 1794271929.923281,
+    "ast_hash": "7b862b70de70092a808f21af8fb2989d",
+    "semantic_hash": "7b862b70de70092a808f21af8fb2989d"
+  },
+  "packages/plugin-build/build.mjs": {
+    "mtime": 1794270783.5005598,
+    "seen": 1794271929.923282,
+    "ast_hash": "39b27711cd3f990d5d8ff151069db5c9",
+    "semantic_hash": "39b27711cd3f990d5d8ff151069db5c9"
+  },
+  "packages/plugin-build/package.json": {
+    "mtime": 1794270621.0745137,
+    "seen": 1794271929.9232829,
+    "ast_hash": "d049149c8afceef8a94bb2f446d0c6d0",
+    "semantic_hash": "d049149c8afceef8a94bb2f446d0c6d0"
+  },
+  "packages/plugin-runtime/package.json": {
+    "mtime": 1794268619.933307,
+    "seen": 1794271929.9232843,
+    "ast_hash": "a459895c8b6f51fd6cf65264f11c9114",
+    "semantic_hash": "a459895c8b6f51fd6cf65264f11c9114"
+  },
+  "packages/plugin-runtime/src/disposal.ts": {
+    "mtime": 1794269611.5384188,
+    "seen": 1794271929.9232852,
+    "ast_hash": "6acef681230ccfa7558950ab4cd0132b",
+    "semantic_hash": "6acef681230ccfa7558950ab4cd0132b"
+  },
+  "packages/plugin-runtime/src/index.ts": {
+    "mtime": 1794269645.1277595,
+    "seen": 1794271929.9232862,
+    "ast_hash": "70ec309e8c051d2fe7bddc5db35fde0f",
+    "semantic_hash": "70ec309e8c051d2fe7bddc5db35fde0f"
+  },
+  "packages/plugin-runtime/src/loader.ts": {
+    "mtime": 1794268619.9333832,
+    "seen": 1794271929.9232872,
+    "ast_hash": "f1fc701a54f6998d3e7514e0c6bf04ad",
+    "semantic_hash": "f1fc701a54f6998d3e7514e0c6bf04ad"
+  },
+  "packages/plugin-runtime/src/manager.ts": {
+    "mtime": 1794269639.4178712,
+    "seen": 1794271929.923288,
+    "ast_hash": "facd792f33fab98897be2626ef8c310b",
+    "semantic_hash": "facd792f33fab98897be2626ef8c310b"
+  },
+  "packages/plugin-runtime/src/manifest.ts": {
+    "mtime": 1794269604.929549,
+    "seen": 1794271929.923289,
+    "ast_hash": "b1e1a93dab58874c8b7ce6c5482a7afd",
+    "semantic_hash": "b1e1a93dab58874c8b7ce6c5482a7afd"
+  },
+  "packages/plugin-runtime/tsconfig.json": {
+    "mtime": 1794268619.9333832,
+    "seen": 1794271929.92329,
+    "ast_hash": "eddeab0baeaf6678dcc4f941aa00c760",
+    "semantic_hash": "eddeab0baeaf6678dcc4f941aa00c760"
+  },
+  "packages/plugin-runtime/verify-runtime.mjs": {
+    "mtime": 1794270828.8067377,
+    "seen": 1794271929.9232912,
+    "ast_hash": "b2135882a7edd3c0165c09080651d9ad",
+    "semantic_hash": "b2135882a7edd3c0165c09080651d9ad"
+  },
+  "packages/ui-kit/package.json": {
+    "mtime": 1794268619.9334824,
+    "seen": 1794271929.9232922,
+    "ast_hash": "4f86e1f8779f201eebfa0db0fbe4bfd1",
+    "semantic_hash": "4f86e1f8779f201eebfa0db0fbe4bfd1"
+  },
+  "plugins/agent-chat/package.json": {
+    "mtime": 1794270729.3585434,
+    "seen": 1794271929.923293,
+    "ast_hash": "efe5532a56f9e70b686c26270d7ab152",
+    "semantic_hash": "efe5532a56f9e70b686c26270d7ab152"
+  },
+  "plugins/agent-chat/plugin.json": {
+    "mtime": 1794268619.9336576,
+    "seen": 1794271929.9232943,
+    "ast_hash": "06fbd8e9a64d3d0acdbaa8207eccaa4c",
+    "semantic_hash": "06fbd8e9a64d3d0acdbaa8207eccaa4c"
+  },
+  "plugins/agent-chat/src/backend/index.ts": {
+    "mtime": 1794268619.9337018,
+    "seen": 1794271929.9232953,
+    "ast_hash": "97d01f47109c9ea2db1805ffbbe6e7d7",
+    "semantic_hash": "97d01f47109c9ea2db1805ffbbe6e7d7"
+  },
+  "plugins/agent-chat/src/frontend/index.tsx": {
+    "mtime": 1794270701.2940536,
+    "seen": 1794271929.9232962,
+    "ast_hash": "a3a376db80840b42e9ebf4e217c47908",
+    "semantic_hash": "a3a376db80840b42e9ebf4e217c47908"
+  },
+  "plugins/file-browser/package.json": {
+    "mtime": 1794270726.0286038,
+    "seen": 1794271929.9232972,
+    "ast_hash": "d70c810ff1aa4c282fcd697a3d08b69f",
+    "semantic_hash": "d70c810ff1aa4c282fcd697a3d08b69f"
+  },
+  "plugins/file-browser/plugin.json": {
+    "mtime": 1794268619.9338305,
+    "seen": 1794271929.9232984,
+    "ast_hash": "8cd758a41cdf24cbbae5f072caa0f291",
+    "semantic_hash": "8cd758a41cdf24cbbae5f072caa0f291"
+  },
+  "plugins/file-browser/src/backend/index.ts": {
+    "mtime": 1794268619.9338756,
+    "seen": 1794271929.9232993,
+    "ast_hash": "f1c9092e2ceda2320c2ff097f873a045",
+    "semantic_hash": "f1c9092e2ceda2320c2ff097f873a045"
+  },
+  "plugins/file-browser/src/frontend/index.tsx": {
+    "mtime": 1794270688.243291,
+    "seen": 1794271929.9233003,
+    "ast_hash": "ac05b432a09bb0a97804ff273f7a1aa0",
+    "semantic_hash": "ac05b432a09bb0a97804ff273f7a1aa0"
+  },
+  "plugins/git/package.json": {
+    "mtime": 1794270727.6975734,
+    "seen": 1794271929.9233012,
+    "ast_hash": "ced5384c98195462c429fa6a8e69304d",
+    "semantic_hash": "ced5384c98195462c429fa6a8e69304d"
+  },
+  "plugins/git/plugin.json": {
+    "mtime": 1794268619.9339998,
+    "seen": 1794271929.9233022,
+    "ast_hash": "f8de78b906459e9b45b3dc9132917979",
+    "semantic_hash": "f8de78b906459e9b45b3dc9132917979"
+  },
+  "plugins/git/src/backend/index.ts": {
+    "mtime": 1794268619.934044,
+    "seen": 1794271929.9233031,
+    "ast_hash": "bae8f55db605f444c99db83e9f6c1128",
+    "semantic_hash": "bae8f55db605f444c99db83e9f6c1128"
+  },
+  "plugins/git/src/frontend/index.tsx": {
+    "mtime": 1794270694.7611723,
+    "seen": 1794271929.9233038,
+    "ast_hash": "3796f79e0059d509b1ce71b8f13167bf",
+    "semantic_hash": "3796f79e0059d509b1ce71b8f13167bf"
+  },
+  "plugins/terminal/package.json": {
+    "mtime": 1794270724.3306346,
+    "seen": 1794271929.923305,
+    "ast_hash": "13a3e30720f99581d8261cfcba21728f",
+    "semantic_hash": "13a3e30720f99581d8261cfcba21728f"
+  },
+  "plugins/terminal/plugin.json": {
+    "mtime": 1794268619.9341688,
+    "seen": 1794271929.923306,
+    "ast_hash": "7ba165f64d94bf06b4e987e1a5df8d76",
+    "semantic_hash": "7ba165f64d94bf06b4e987e1a5df8d76"
+  },
+  "plugins/terminal/src/backend/index.ts": {
+    "mtime": 1794268619.9342134,
+    "seen": 1794271929.9233067,
+    "ast_hash": "4cfacd3887a91ce47a54818a42625315",
+    "semantic_hash": "4cfacd3887a91ce47a54818a42625315"
+  },
+  "plugins/terminal/src/frontend/index.tsx": {
+    "mtime": 1794270681.524413,
+    "seen": 1794271929.9233077,
+    "ast_hash": "d4b376f4dff609d720b35f4592ac21fe",
+    "semantic_hash": "d4b376f4dff609d720b35f4592ac21fe"
+  },
+  "workspace-core/package.json": {
+    "mtime": 1794270578.056298,
+    "seen": 1794271929.9233086,
+    "ast_hash": "2951c8a6d4586fba626a0231ccd54351",
+    "semantic_hash": "2951c8a6d4586fba626a0231ccd54351"
+  },
+  "workspace-core/src/browser/canvas-application-shell.ts": {
+    "mtime": 1794268619.9343867,
+    "seen": 1794271929.9233096,
+    "ast_hash": "70f71e720f7ccbe9de95e068d550ec9f",
+    "semantic_hash": "70f71e720f7ccbe9de95e068d550ec9f"
+  },
+  "workspace-core/src/browser/plugin/host-modules.ts": {
+    "mtime": 1794270370.132103,
+    "seen": 1794271929.9233105,
+    "ast_hash": "624c64c282c1cf778437bd4af146a648",
+    "semantic_hash": "624c64c282c1cf778437bd4af146a648"
+  },
+  "workspace-core/src/browser/plugin/plugin-frontend-host.ts": {
+    "mtime": 1794270435.15991,
+    "seen": 1794271929.9233117,
+    "ast_hash": "4d5722a96832c7e886905f162f7c6be0",
+    "semantic_hash": "4d5722a96832c7e886905f162f7c6be0"
+  },
+  "workspace-core/src/browser/plugin/plugin-kernel.ts": {
+    "mtime": 1794270400.7195415,
+    "seen": 1794271929.9233127,
+    "ast_hash": "2ceb41b467e3adbbc42ab66115c268d7",
+    "semantic_hash": "2ceb41b467e3adbbc42ab66115c268d7"
+  },
+  "workspace-core/src/browser/plugin/plugin-manager-commands.ts": {
+    "mtime": 1794271053.8566618,
+    "seen": 1794271929.9233136,
+    "ast_hash": "9c1d4a45348229623c83d6eec04729b2",
+    "semantic_hash": "9c1d4a45348229623c83d6eec04729b2"
+  },
+  "workspace-core/src/browser/plugin/plugin-manager-widget.ts": {
+    "mtime": 1794270524.9622672,
+    "seen": 1794271929.9233146,
+    "ast_hash": "b04b39c05828e9edce9a8c5b026937c2",
+    "semantic_hash": "b04b39c05828e9edce9a8c5b026937c2"
+  },
+  "workspace-core/src/browser/plugin/plugin-manager.ts": {
+    "mtime": 1794270491.3908808,
+    "seen": 1794271929.9233162,
+    "ast_hash": "f3a450047cb2600512d517634ccc5eb9",
+    "semantic_hash": "f3a450047cb2600512d517634ccc5eb9"
+  },
+  "workspace-core/src/browser/workspace-core-frontend-module.ts": {
+    "mtime": 1794270564.0405536,
+    "seen": 1794271929.9233172,
+    "ast_hash": "aacddf8910842fd6c85bb6d6823a1165",
+    "semantic_hash": "aacddf8910842fd6c85bb6d6823a1165"
+  },
+  "workspace-core/src/browser/workspace-demo-contribution.ts": {
+    "mtime": 1794268619.9344277,
+    "seen": 1794271929.9233184,
+    "ast_hash": "d1bf411a4c9f0348b904d9aaf0c81767",
+    "semantic_hash": "d1bf411a4c9f0348b904d9aaf0c81767"
+  },
+  "workspace-core/src/browser/workspace-demo-widget.ts": {
+    "mtime": 1794268619.9344277,
+    "seen": 1794271929.9233193,
+    "ast_hash": "3e7ec2bb0d57580921e7e1148ebc92ed",
+    "semantic_hash": "3e7ec2bb0d57580921e7e1148ebc92ed"
+  },
+  "workspace-core/src/browser/workspace-docking-service.ts": {
+    "mtime": 1794270417.861227,
+    "seen": 1794271929.92332,
+    "ast_hash": "641bee54d6bbee23652bf670eadd3458",
+    "semantic_hash": "641bee54d6bbee23652bf670eadd3458"
+  },
+  "workspace-core/src/browser/workspace-panel-registry.ts": {
+    "mtime": 1794269955.31381,
+    "seen": 1794271929.923321,
+    "ast_hash": "3c1a0609d0fe24b491849c8a09e995c5",
+    "semantic_hash": "3c1a0609d0fe24b491849c8a09e995c5"
+  },
+  "workspace-core/src/common/plugin-host-protocol.ts": {
+    "mtime": 1794270481.5740602,
+    "seen": 1794271929.9233222,
+    "ast_hash": "2f21e1c9a639e251d642bdf18a19c01c",
+    "semantic_hash": "2f21e1c9a639e251d642bdf18a19c01c"
+  },
+  "workspace-core/src/index.ts": {
+    "mtime": 1794270583.2122037,
+    "seen": 1794271929.9233232,
+    "ast_hash": "dd397196efa4e63b01b02878f9868243",
+    "semantic_hash": "dd397196efa4e63b01b02878f9868243"
+  },
+  "workspace-core/src/node/plugin-backend-runtime.ts": {
+    "mtime": 1794269781.7741108,
+    "seen": 1794271929.9233239,
+    "ast_hash": "80f791396e508c6ac1e2d9176981c262",
+    "semantic_hash": "80f791396e508c6ac1e2d9176981c262"
+  },
+  "workspace-core/src/node/plugin-discovery.ts": {
+    "mtime": 1794270715.6807919,
+    "seen": 1794271929.9233248,
+    "ast_hash": "33391aa423097abd0a400145bd3c55b4",
+    "semantic_hash": "33391aa423097abd0a400145bd3c55b4"
+  },
+  "workspace-core/src/node/plugin-host-backend-service.ts": {
+    "mtime": 1794270927.5749474,
+    "seen": 1794271929.923326,
+    "ast_hash": "d9eb444ced705e99a0e443a7a6533541",
+    "semantic_hash": "d9eb444ced705e99a0e443a7a6533541"
+  },
+  "workspace-core/src/node/plugin-paths.ts": {
+    "mtime": 1794269696.8917499,
+    "seen": 1794271929.923327,
+    "ast_hash": "552a8d5c92a3487191cd5d8b8aaaa8dc",
+    "semantic_hash": "552a8d5c92a3487191cd5d8b8aaaa8dc"
+  },
+  "workspace-core/src/node/plugin-state-store.ts": {
+    "mtime": 1794269735.357005,
+    "seen": 1794271929.923328,
+    "ast_hash": "b4b028e076b91232308b7e0f6b52ebf9",
+    "semantic_hash": "b4b028e076b91232308b7e0f6b52ebf9"
+  },
+  "workspace-core/src/node/workspace-core-backend-module.ts": {
+    "mtime": 1794269846.0428813,
+    "seen": 1794271929.923329,
+    "ast_hash": "a32ad8c5d25131c0e3062774f0d4aecc",
+    "semantic_hash": "a32ad8c5d25131c0e3062774f0d4aecc"
+  },
+  "workspace-core/tsconfig.json": {
+    "mtime": 1794268619.9344583,
+    "seen": 1794271929.92333,
+    "ast_hash": "a2614f5e57a9e1882d75e04b913204e8",
+    "semantic_hash": "a2614f5e57a9e1882d75e04b913204e8"
+  },
+  "AGENTS.md": {
+    "mtime": 1794268619.9304583,
+    "seen": 1794271929.9233308,
+    "ast_hash": "9b0f87319a0d9ed13d04a05cb49b3294",
+    "semantic_hash": "9b0f87319a0d9ed13d04a05cb49b3294"
+  },
+  "README.md": {
+    "mtime": 1794270963.1733027,
+    "seen": 1794271929.9233317,
+    "ast_hash": "24a3e2ea4e4021ec0191232550219436",
+    "semantic_hash": "24a3e2ea4e4021ec0191232550219436"
+  },
+  "packages/plugin-api/README.md": {
+    "mtime": 1794268619.9330895,
+    "seen": 1794271929.923333,
+    "ast_hash": "14780ec90eb9f709abf6800377cad501",
+    "semantic_hash": "14780ec90eb9f709abf6800377cad501"
+  },
+  "packages/plugin-build/README.md": {
+    "mtime": 1794270994.7827306,
+    "seen": 1794271929.923334,
+    "ast_hash": "2b29c84dce09a134c1d4194079383203",
+    "semantic_hash": "2b29c84dce09a134c1d4194079383203"
+  },
+  "packages/plugin-runtime/README.md": {
+    "mtime": 1794270971.2521565,
+    "seen": 1794271929.9233346,
+    "ast_hash": "f8d94867910c6e1b6acc48c404507dc2",
+    "semantic_hash": "f8d94867910c6e1b6acc48c404507dc2"
+  },
+  "packages/ui-kit/README.md": {
+    "mtime": 1794268619.9333832,
+    "seen": 1794271929.9233358,
+    "ast_hash": "8b6748c8bd974c471e6fb40b8cae5d04",
+    "semantic_hash": "8b6748c8bd974c471e6fb40b8cae5d04"
+  },
+  "plugins/README.md": {
+    "mtime": 1794270988.288848,
+    "seen": 1794271929.9233367,
+    "ast_hash": "4002e9d222a11fa24875608cd9a56166",
+    "semantic_hash": "4002e9d222a11fa24875608cd9a56166"
+  },
+  "workspace-core/README.md": {
+    "mtime": 1794268619.9342134,
+    "seen": 1794271929.9233377,
+    "ast_hash": "9213b8c30e487f4336f51fe1269a495a",
+    "semantic_hash": "9213b8c30e487f4336f51fe1269a495a"
+  }
+}
