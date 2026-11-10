@@ -4,16 +4,21 @@
   "version": "0.1.0",
   "type": "module",
   "description": "User-controlled blank-canvas docking workspace for BruceDE.",
-  "keywords": ["theia-extension"],
+  "keywords": [
+    "theia-extension"
+  ],
   "dependencies": {
     "@brucede/plugin-api": "0.1.0",
     "@brucede/plugin-runtime": "0.1.0",
     "@brucede/ui-kit": "0.1.0",
     "@lumino/widgets": "2.7.5",
     "@theia/core": "1.77.0",
-    "@theia/filesystem": "1.77.0"
+    "@theia/filesystem": "1.77.0",
+    "@theia/terminal": "1.77.0"
   },
-  "devDependencies": { "typescript": "5.9.3" },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "prepare": "npm run build",
@@ -25,7 +30,10 @@
       "backend": "lib/node/workspace-core-backend-module"
     }
   ],
-  "files": ["lib", "src"],
+  "files": [
+    "lib",
+    "src"
+  ],
   "exports": {
     ".": "./lib/index.js",
     "./package.json": "./package.json",

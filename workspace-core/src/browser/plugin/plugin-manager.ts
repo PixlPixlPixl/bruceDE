@@ -16,6 +16,7 @@ import { WorkspaceDockingService } from '../workspace-docking-service.js';
 import { WorkspacePanelRegistry } from '../workspace-panel-registry.js';
 import { WorkspaceSelectionService } from '../workspace-selection-service.js';
 import { WorkspaceResourceService } from '../workspace-resource-service.js';
+import { HostPanelFactoryRegistry } from '../host-panels/host-panel-factory-registry.js';
 import { PluginEventBus, PluginServiceRegistry } from './plugin-kernel.js';
 import { PluginFrontendHost } from './plugin-frontend-host.js';
 
@@ -64,6 +65,7 @@ export class PluginManager implements FrontendApplicationContribution {
         @inject(PluginEventBus) protected readonly events: PluginEventBus,
         @inject(WorkspaceSelectionService) protected readonly selection: WorkspaceSelectionService,
         @inject(WorkspaceResourceService) protected readonly resources: WorkspaceResourceService,
+        @inject(HostPanelFactoryRegistry) protected readonly hostPanels: HostPanelFactoryRegistry,
         @inject(CommandRegistry) protected readonly commands: CommandRegistry,
         @inject(MessageService) protected readonly messages: MessageService,
         @inject(PluginServiceBridge) protected readonly serviceBridge: PluginServiceBridge
@@ -74,6 +76,7 @@ export class PluginManager implements FrontendApplicationContribution {
             commands: this.commands,
             services: this.services,
             events: this.events,
+            hostPanelFactories: this.hostPanels,
             invokeRemote: (serviceId, method, args) => this.serviceBridge.invoke(serviceId, method, args),
             onError: (pluginId, error) => {
                 void this.backend.reportError(pluginId, error instanceof Error ? error.message : String(error));

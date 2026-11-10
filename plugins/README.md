@@ -35,6 +35,7 @@ npm run build:plugins
 - `api.panels.register({ id, title, createWidget })` — registers a panel **type**. `createWidget` receives `(instanceId, host)` where `host.React`, `host.widgets`, and `host.createReactWidget` are the host's own instances. Do not import React or Lumino directly: use `host` so widgets are the same classes the shell docks.
 - `api.panels.open(panelId)` / `api.panels.close(instanceId)` — opens/closes a panel in the shared main area. The host closes every instance a plugin opened when it unloads.
 - `api.commands.register({ id, title, execute })` — registers a Theia command.
+- `api.panels.registerHostPanel({ id, title, capabilityId })` — registers a panel the host builds, for native functionality you must not reimplement. `api.panels.hasHostCapability(id)` reports whether this build exposes it. Capability ids (`brucede.terminal`) are stable host contracts, never import paths or Theia class names; you never receive a raw host widget or the DI container.
 - `api.services.provide/get/has` — shared services on the plugin's own side of the boundary. One registry per side, keyed by owner; a plugin can consume another plugin's service and unloading the provider removes exactly its own entries.
 - `api.services.remote<T>(serviceId)` — a renderer plugin's typed view of a service a **backend** plugin provided. Each method call becomes one RPC call over Theia's existing channel, so arguments and results must be JSON-serializable. Calling it from a backend plugin throws; backend plugins use `get` in-process.
 - `api.events.on/emit` — typed events, also shared per side.
@@ -94,12 +95,12 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   `agent.sessions`. Agents come from `BRUCEDE_ACP_AGENTS` (JSON array of
   `{ id, name, command, args }`) or a small known-CLI list; the panel polls the
   service because the host cannot push backend events across the RPC boundary.
-- **Terminal** (`bruce.terminal`) — still a scaffold. Embedding Theia's native
-  terminal requires host DI access (`TerminalService`, `WidgetManager`) and
-  `@theia/terminal` in the shared-module allowlist, neither of which the plugin
-  API exposes; the host's own `Terminal: New Terminal` command docks into a
-  `bottom` area that `CanvasApplicationShell` deliberately removes. Rendering a
-  pty in a custom emulator would be a custom shell, which is out of scope.
+- **Terminal** (`bruce.terminal`) — adopts the host's `brucede.terminal`
+  capability through `api.panels.registerHostPanel`, so the widget is created,
+  rendered, persisted and disposed by the host's own terminal code. The plugin
+  bundle contains no Theia or xterm code. The built-in
+  `Terminal: New Terminal` command reaches the same creation path and the same
+  main-area placement (see `workspace-core/src/browser/canvas-terminal.ts`).
 
 ## Trust
 

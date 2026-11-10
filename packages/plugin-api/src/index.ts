@@ -181,8 +181,53 @@ export interface PanelDefinition {
     readonly createWidget: (instanceId: string, host: PanelHostTools) => Widget | Promise<Widget>;
 }
 
+/**
+ * Stable host panel capabilities a plugin may adopt through
+ * {@link PanelRegistryAPI.registerHostPanel}.
+ *
+ * These ids are **capability contracts**, not import paths, module names or
+ * Theia class names. A plugin never receives a raw host widget, a DI container
+ * or a `WidgetManager`: the host builds the widget behind the capability and
+ * hands back a panel instance. The host therefore stays free to change how a
+ * capability is implemented without breaking plugins, and a missing capability
+ * is reported instead of faked.
+ */
+export const HOST_PANEL_CAPABILITIES = {
+    /** Interactive terminal backed by the host's native terminal widget. */
+    terminal: 'brucede.terminal'
+} as const;
+
+export type HostPanelCapabilityId =
+    (typeof HOST_PANEL_CAPABILITIES)[keyof typeof HOST_PANEL_CAPABILITIES];
+
+/** A panel type backed by a host capability instead of a plugin-built widget. */
+export interface HostPanelRegistration {
+    /** Unique within the declaring plugin; becomes `<pluginId>:<id>`. */
+    readonly id: string;
+    readonly title: string;
+    readonly icon?: string;
+    /**
+     * Stable capability id, for example {@link HOST_PANEL_CAPABILITIES.terminal}.
+     * Never a module path or a Theia class name.
+     */
+    readonly capabilityId: string;
+    /** JSON-serializable, capability-specific options. */
+    readonly options?: Readonly<Record<string, unknown>>;
+}
+
 export interface PanelRegistryAPI {
     register(definition: PanelDefinition): PluginDisposer;
+    /**
+     * Registers a panel type the host builds on your behalf.
+     *
+     * Use this for native functionality (a terminal, an editor, …) instead of
+     * importing Theia internals into the plugin bundle. The host keeps ownership
+     * of the widget and of its creation path, so the same host code creates
+     * panels opened by a plugin and by the host's own commands.
+     */
+    registerHostPanel(registration: HostPanelRegistration): PluginDisposer;
+    /** True when the host currently exposes `capabilityId`. */
+    hasHostCapability(capabilityId: string): boolean;
     /**
      * Opens a panel instance in the shared main DockPanel.
      *

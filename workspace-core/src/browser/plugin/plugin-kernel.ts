@@ -5,6 +5,7 @@ import type {
     CommandDefinition,
     DockMode,
     FrontendPluginAPI,
+    HostPanelRegistration,
     PanelDefinition,
     PanelHostTools,
     PanelOpenOptions,
@@ -18,6 +19,7 @@ import type { DisposerBag } from '@brucede/plugin-runtime';
 import { PluginEventBus, PluginServiceRegistry } from '../../common/plugin-registries.js';
 import { WorkspaceDockingService } from '../workspace-docking-service.js';
 import { WorkspacePanelRegistry } from '../workspace-panel-registry.js';
+import type { HostPanelFactoryRegistry } from '../host-panels/host-panel-factory-registry.js';
 
 // The registries are framework-free so the Node backend shares the same
 // semantics; re-exported here because the renderer kernel is their public home.
@@ -41,6 +43,8 @@ export interface PluginKernelOptions {
     readonly commands: CommandRegistry;
     readonly services: PluginServiceRegistry;
     readonly events: PluginEventBus;
+    /** Curated host capabilities a plugin may adopt without importing Theia. */
+    readonly hostPanelFactories: HostPanelFactoryRegistry;
     /**
      * Invokes a service provided by a backend plugin over Theia's RPC channel.
      * When absent, `api.services.remote` reports that no bridge is configured.
@@ -80,7 +84,7 @@ export class PluginKernel {
     createApi(manifest: PluginManifest, directory: string, bag: DisposerBag): FrontendPluginAPI {
         const pluginId = manifest.id;
         const instanceIds = new Set<string>();
-        const { panelRegistry, docking, commands, services, events } = this.options;
+        const { panelRegistry, docking, commands, services, events, hostPanelFactories } = this.options;
 
         const panelTypeId = (panelId: string): string => `${pluginId}:${panelId}`;
 
@@ -101,6 +105,36 @@ export class PluginKernel {
                 bag.add(dispose);
                 return dispose;
             },
+            registerHostPanel: (registration: HostPanelRegistration): PluginDisposer => {
+                if (!hostPanelFactories.has(registration.capabilityId)) {
+                    throw new Error(
+                        `Host panel capability "${registration.capabilityId}" is not available in this build.`
+                    );
+                }
+                const typeId = panelTypeId(registration.id);
+                const unregister = panelRegistry.registerPanel(
+                    {
+                        id: typeId,
+                        title: registration.title,
+                        // The host builds and owns the widget; the plugin only
+                        // names the capability and never sees a raw host widget.
+                        hostPanel: true,
+                        createWidget: instanceId =>
+                            hostPanelFactories.create(registration.capabilityId, {
+                                capabilityId: registration.capabilityId,
+                                instanceId,
+                                options: registration.options
+                            })
+                    },
+                    pluginId
+                );
+                const dispose = () => {
+                    unregister();
+                };
+                bag.add(dispose);
+                return dispose;
+            },
+            hasHostCapability: (capabilityId: string): boolean => hostPanelFactories.has(capabilityId),
             open: async (panelId: string, options: PanelOpenOptions = {}) => {
                 const mode = options.mode ? DOCK_MODES[options.mode] : undefined;
                 const ref = options.ref ? docking.getWidgetById(options.ref) : undefined;

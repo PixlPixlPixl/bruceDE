@@ -16,6 +16,12 @@
         "id": "terminal.main",
         "title": "Terminal"
       }
+    ],
+    "commands": [
+      {
+        "id": "bruce.terminal.open",
+        "title": "Terminal: New Terminal"
+      }
     ]
   }
 }

@@ -116,6 +116,9 @@ Frontend (`FrontendPluginAPI`):
 
 - `api.panels.register({ id, title, createWidget })` — registers a panel **type**.
   `createWidget(instanceId, host)` returns a fresh widget per instance.
+- `api.panels.registerHostPanel({ id, title, capabilityId, options? })` — registers
+  a panel the **host** builds for you (see "Host capabilities" below).
+- `api.panels.hasHostCapability(capabilityId)` — whether this build exposes it.
 - `api.panels.open(panelId, opts?)` / `close(instanceId)` / `getOpenInstances()`.
   `opts.mode`: `split-left|split-right|split-top|split-bottom|tab-before|tab-after`,
   `opts.ref`: widget id.
@@ -144,6 +147,38 @@ export function activate(api: FrontendPluginAPI): void {
     });
 }
 ```
+
+## Host capabilities
+
+Some panels need real host functionality — a terminal, later an editor or a diff
+view. Do not reimplement it and do not import Theia internals. Adopt a curated
+**host capability** instead:
+
+```ts
+import { HOST_PANEL_CAPABILITIES } from '@brucede/plugin-api';
+
+api.panels.registerHostPanel({
+    id: 'terminal.main',
+    title: 'Terminal',
+    capabilityId: HOST_PANEL_CAPABILITIES.terminal
+});
+api.commands.register({
+    id: 'bruce.terminal.open',
+    title: 'Terminal: New Terminal',
+    execute: () => api.panels.open('terminal.main')
+});
+```
+
+A capability id (`brucede.terminal`) is a **stable host contract**, not an import
+path or a Theia class name. The host owns widget creation, rendering, persistence
+and disposal; you never receive a raw host widget, a DI container or a
+`WidgetManager`. Always gate on `hasHostCapability` (or let `registerHostPanel`
+throw) so a host without that capability fails loudly instead of showing an empty
+panel.
+
+Available today: `HOST_PANEL_CAPABILITIES.terminal` (`brucede.terminal`) — the
+host's native terminal, the same widget the built-in `Terminal: New Terminal`
+command creates. New capabilities are added host-side; a plugin cannot define one.
 
 ## Services and events
 
@@ -176,9 +211,13 @@ It throws in backend code — backend plugins use `get` in-process.
    via `onDispose` (or the disposer `provide`/`on`/`register` return). Cordis tears
    down the fiber, but it cannot see raw Node handles.
 4. **Keep frontend and backend split.** Node APIs only in `src/backend`.
-5. **Build real functionality.** No test-only or placeholder plugins; a scaffold
+5. **Never import Theia internals to fake host UI.** If you need a terminal or
+   another native surface, adopt a host capability. Bundling `@theia/*` or
+   `xterm` into a plugin produces duplicate containers and widgets the shell
+   cannot adopt — the bundler allowlist will not link them anyway.
+6. **Build real functionality.** No test-only or placeholder plugins; a scaffold
    must exercise the real contract and then be completed.
-6. **Never promise code unload.** Native ESM module records may stay cached;
+7. **Never promise code unload.** Native ESM module records may stay cached;
    reload/restart is the answer when a module cannot be replaced safely.
 
 ## Checklist before you finish
@@ -188,6 +227,7 @@ It throws in backend code — backend plugins use `get` in-process.
 - [ ] `npm run build:plugins` succeeds; `dist/` not committed
 - [ ] plugin appears in `Plugins: Open Plugin Manager` with no diagnostics
 - [ ] its open command docks a panel into the shared main area
+- [ ] native panels go through `registerHostPanel`, not a bundled Theia copy
 - [ ] disabling it closes every panel it opened and leaves no orphan commands
 - [ ] reopening the app restores panels the user left open
 - [ ] no host files modified

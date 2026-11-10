@@ -1,6 +1,7 @@
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { WidgetManager } from '@theia/core/lib/browser/widget-manager';
 import { Widget } from '@lumino/widgets';
+import { WorkspaceUnavailablePanel } from './workspace-unavailable-panel.js';
 
 /**
  * Factory id every workspace panel instance is created under.
@@ -38,6 +39,16 @@ export function isWorkspacePanelWidgetOptions(value: unknown): value is Workspac
 export interface WorkspacePanelDefinition {
     readonly id: string;
     readonly title: string;
+    /**
+     * True for panel types whose widget is built by a host capability.
+     *
+     * Host panels are created directly instead of through the workspace panel
+     * `WidgetFactory`: the underlying widget (a terminal today) already has its
+     * own Theia factory and persistence semantics, and registering it under a
+     * second manager key would make Theia restore it as a plain host widget
+     * while the workspace believed it owned a panel.
+     */
+    readonly hostPanel?: boolean;
     readonly createWidget: (instanceId: string) => Widget | Promise<Widget>;
 }
 
@@ -119,6 +130,11 @@ export class WorkspacePanelRegistry {
             throw new Error('Unknown workspace panel type: ' + panelTypeId);
         }
         const resolvedId = instanceId ?? this.nextInstanceId(panelTypeId);
+        if (this.definitions.get(panelTypeId)?.definition.hostPanel) {
+            // Host capability widgets persist themselves through their own Theia
+            // factory; wrapping them here would double-register the instance.
+            return this.instantiate(resolvedId, panelTypeId, options => new WorkspaceUnavailablePanel(options));
+        }
         const options: WorkspacePanelWidgetOptions = { panelTypeId, instanceId: resolvedId };
         const widget = await this.widgetManager.getOrCreateWidget<Widget>(
             WORKSPACE_PANEL_FACTORY_ID,
@@ -145,7 +161,11 @@ export class WorkspacePanelRegistry {
             ? await registered.definition.createWidget(instanceId)
             : unavailable({ panelTypeId, instanceId });
         const title = registered?.definition.title ?? instanceId;
-        widget.id = instanceId;
+        // Host widgets (terminals) already carry a meaningful DOM id used by
+        // Theia for process lookup; only unnamed widgets get the instance id.
+        if (!widget.id) {
+            widget.id = instanceId;
+        }
         if (!widget.title.label) {
             widget.title.label = title;
         }

@@ -23,6 +23,12 @@ const { rewriteHostModuleSpecifiers } = await import(
 const { PluginEventBus, PluginServiceRegistry } = await import(
     path.join(root, 'workspace-core/lib/common/plugin-registries.js')
 );
+const { HOST_PANEL_CAPABILITIES } = await import(
+    path.join(root, 'packages/plugin-api/lib/index.js')
+);
+const { HOST_MODULES } = await import(
+    path.join(root, 'workspace-core/lib/common/plugin-host-protocol.js')
+);
 
 let failures = 0;
 function check(label, condition, detail) {
@@ -132,6 +138,40 @@ check('unloading an owner removes its services', !services.has('alpha.api'));
 bus.emit('workspace/selection-changed', 'file:///b.ts');
 check('unloading an owner removes its listeners', received.length === 1);
 
+console.log('host panel capabilities');
+check(
+    'the terminal capability is a stable id, not a class or module path',
+    HOST_PANEL_CAPABILITIES.terminal === 'brucede.terminal',
+    String(HOST_PANEL_CAPABILITIES.terminal)
+);
+
+console.log('plugin bundles stay inside the shared-module allowlist');
+const hostModuleSpecifiers = Object.keys(HOST_MODULES).map(bare => `/brucede-host-modules/${HOST_MODULES[bare]}`);
+for (const plugin of discovery.plugins) {
+    const id = plugin.manifest.id;
+    if (!plugin.frontendEntrypoint) {
+        continue;
+    }
+    const source = await fs.readFile(plugin.frontendEntrypoint, 'utf8');
+    const referenced = Array.from(new Set(source.match(/\/brucede-host-modules\/[A-Za-z0-9_-]+\.js/g) ?? []));
+    const unknown = referenced.filter(specifier => !hostModuleSpecifiers.includes(specifier));
+    check(`${id}: frontend imports only allowlisted host modules`, unknown.length === 0, unknown.join(', '));
+}
+const terminalPlugin = discovery.plugins.find(plugin => plugin.manifest.id === 'bruce.terminal');
+const terminalSource = terminalPlugin?.frontendEntrypoint
+    ? await fs.readFile(terminalPlugin.frontendEntrypoint, 'utf8')
+    : '';
+check(
+    'terminal plugin does not embed Theia terminal internals',
+    !term_source_has_theia(terminalSource),
+    'xterm/@theia/terminal/TerminalWidget found in the plugin bundle'
+);
+check(
+    'terminal plugin adopts the host capability instead of a widget factory',
+    terminalSource.includes('/brucede-host-modules/brucede-plugin-api.js'),
+    'host module specifier missing'
+);
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);
 
@@ -175,4 +215,8 @@ async function writeDependencyFixture() {
         dependencies: { 'bruce.alpha': '^0.2.0' }
     });
     return pluginsRoot;
+}
+
+function term_source_has_theia(source) {
+    return ['xterm', '@theia/terminal', 'TerminalWidget'].some(token => source.includes(token));
 }
