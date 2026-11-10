@@ -20,8 +20,8 @@
     "typescript": "5.9.3"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "watch": "tsc -p tsconfig.json --watch"
+    "build": "node ../node_modules/typescript/bin/tsc -p tsconfig.json",
+    "watch": "node ../node_modules/typescript/bin/tsc -p tsconfig.json --watch"
   },
   "theiaExtensions": [
     {

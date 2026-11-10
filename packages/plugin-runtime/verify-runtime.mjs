@@ -465,6 +465,52 @@ check(
     'the session logic is duplicated per protocol'
 );
 
+console.log('install and build scripts avoid Windows shims');
+{
+    // `node_modules/.bin` wrappers are .cmd files on Windows whose last line is
+    // `"%_prog%" …` with `%_prog%` = node. On hosts where `node` is itself a
+    // script or shim, cmd resolves the quoted name literally and fails with
+    // `'"node"' is not recognized`, which aborted `npm install`. Our own scripts
+    // therefore call the tool entrypoints through `node` directly.
+    const scriptOwners = [
+        'package.json',
+        'browser-app/package.json',
+        'electron-app/package.json',
+        'workspace-core/package.json',
+        'packages/plugin-api/package.json',
+        'packages/plugin-runtime/package.json'
+    ];
+    const shimCalls = [];
+    for (const owner of scriptOwners) {
+        const manifest = await readJsonSource(owner);
+        for (const [name, command] of Object.entries(manifest.scripts ?? {})) {
+            if (typeof command !== 'string') {
+                continue;
+            }
+            // Bare tool names that npm resolves through node_modules/.bin.
+            if (/\b(tsc|theia|lerna)\b/.test(command) && !command.includes('node ')) {
+                shimCalls.push(`${owner}#${name}`);
+            }
+        }
+    }
+    check(
+        'build scripts call node directly instead of .bin wrappers',
+        shimCalls.length === 0,
+        shimCalls.join(', ')
+    );
+    const rootManifest = await readJsonSource('package.json');
+    check(
+        'the install hook compiles the local packages',
+        rootManifest.scripts?.postinstall?.includes('build:workspace-core'),
+        'npm install would leave @brucede/* unresolved'
+    );
+    check(
+        'the install hook reaches theia through node',
+        rootManifest.scripts?.postinstall?.includes('node node_modules/@theia/cli/bin/theia.js'),
+        'the postinstall would run the .bin shim'
+    );
+}
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);
 

@@ -16,16 +16,22 @@
       "import": "./lib/loader.js"
     }
   },
-  "keywords": ["theia-extension"],
-  "files": ["lib"],
+  "keywords": [
+    "theia-extension"
+  ],
+  "files": [
+    "lib"
+  ],
   "dependencies": {
     "@brucede/plugin-api": "0.1.0",
     "@deepseek-ai/cordis": "4.1.0",
     "@deepseek-ai/cordis-plugin-loader": "1.1.0"
   },
-  "devDependencies": { "typescript": "5.9.3" },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "watch": "tsc -p tsconfig.json --watch"
+    "build": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json",
+    "watch": "node ../../node_modules/typescript/bin/tsc -p tsconfig.json --watch"
   }
 }

@@ -12,11 +12,11 @@
     "build:plugins": "node packages/plugin-build/build-all.mjs",
     "build:browser": "npm run build:workspace-core && npm run build:plugins && npm --prefix browser-app run bundle",
     "build:electron": "npm run build:workspace-core && npm run build:plugins && npm --prefix electron-app run bundle",
-    "postinstall": "npm run build:workspace-core && theia check:theia-version",
+    "postinstall": "npm run build:workspace-core && node node_modules/@theia/cli/bin/theia.js check:theia-version",
     "start:browser": "npm --prefix browser-app start",
     "start:electron": "npm --prefix electron-app start",
-    "watch:browser": "lerna run --parallel watch --ignore electron-app",
-    "watch:electron": "lerna run --parallel watch --ignore browser-app"
+    "watch:browser": "node node_modules/lerna/dist/cli.js run --parallel watch --ignore electron-app",
+    "watch:electron": "node node_modules/lerna/dist/cli.js run --parallel watch --ignore browser-app"
   },
   "devDependencies": {
     "@types/react-dom": "^19.3.0",

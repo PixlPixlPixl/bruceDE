@@ -23,6 +23,14 @@ If you installed with `--ignore-scripts`, build them once by hand:
 npm run build:workspace-core
 ```
 
+Every script that runs during install or build calls its tool entrypoint through
+`node` directly (`node node_modules/@theia/cli/bin/theia.js build`) instead of
+going through the `node_modules/.bin` wrapper. Those wrappers are `.cmd` files on
+Windows whose last line is `"%_prog%" …`, and on a host where `node` is itself a
+shim, `cmd.exe` resolves that quoted name literally and fails with
+`'"node"' is not recognized as an internal or external command`, aborting
+`npm install`. Plain `node` is what npm itself uses, so it always resolves.
+
 The application is pinned to Theia 1.77.0. Cordis is the native-plugin lifecycle engine. Plugins are trusted code, not sandboxed: read [AGENTS.md](./AGENTS.md) before developing or installing plugins.
 
 ## Plugin runtime
