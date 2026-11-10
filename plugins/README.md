@@ -98,6 +98,14 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   - `pi-rpc` — Pi's own JSONL command/event protocol (`pi --mode rpc
     --no-session`); Pi has no ACP mode.
 
+  Each chat tab is one session: the backend keys its process and transcript by
+  the panel instance id, and the agent travels in the panel state, so restoring a
+  layout restores the tabs. The header has a `+` button instead of a permanent
+  agent list: it opens a picker with installed agents on top (full colour,
+  alphabetical) and the supported-but-missing ones below, dimmed and disabled.
+  Choosing an agent opens a **sibling tab** next to the current chat
+  (`tab-after`); the running session keeps its transcript and its process.
+
   Agents come from `BRUCEDE_AGENTS` (JSON array of
   `{ id, name, protocol?, command, args? }`, `protocol` defaults to `acp`;
   `BRUCEDE_ACP_AGENTS` is still accepted under its old name). Without

@@ -37,18 +37,29 @@ export interface AgentState {
 }
 
 /**
- * Provided by the backend half under `agent.sessions`.
+ * One chat session per panel instance.
  *
- * The renderer polls {@link AgentState} because the host cannot push backend
- * events across the RPC boundary; only renderer → backend calls exist.
+ * A session id **is** a panel instance id: two chat tabs talk to independent
+ * sessions, so opening a second chat never disturbs the first. The backend keeps
+ * the child process, transcript and status per session id.
  */
 export interface AgentSessionsService {
+    /** Every agent this build supports, installed or not. */
     listAgents(): AgentDescriptor[] | Promise<AgentDescriptor[]>;
-    state(agentId: string): AgentState | Promise<AgentState>;
+    /**
+     * Binds a session to an agent (creating the session on first use) and returns
+     * its current state. Re-binding an existing session switches its agent and
+     * clears the transcript.
+     */
+    openSession(sessionId: string, agentId: string): Promise<AgentState>;
+    /** Transcript and status of a session; empty and idle when it is unknown. */
+    state(sessionId: string): Promise<AgentState>;
     /** Appends the prompt and starts the turn; resolves once it is running. */
-    send(agentId: string, text: string): Promise<AgentState>;
+    send(sessionId: string, text: string): Promise<AgentState>;
     /** Cancels the in-flight turn, if any. */
-    cancel(agentId: string): Promise<AgentState>;
-    /** Clears the transcript and drops the session. */
-    reset(agentId: string): Promise<AgentState>;
+    cancel(sessionId: string): Promise<AgentState>;
+    /** Clears the transcript and keeps the agent binding. */
+    reset(sessionId: string): Promise<AgentState>;
+    /** Releases the child process of a session whose panel is gone. */
+    release(sessionId: string): Promise<void>;
 }

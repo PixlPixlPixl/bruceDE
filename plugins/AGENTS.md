@@ -121,13 +121,27 @@ belongs to the plugin and is disposed when the plugin unloads.
 Frontend (`FrontendPluginAPI`):
 
 - `api.panels.register({ id, title, createWidget })` — registers a panel **type**.
-  `createWidget(instanceId, host)` returns a fresh widget per instance.
+  `createWidget(instanceId, host, state?)` returns a fresh widget per instance.
 - `api.panels.registerHostPanel({ id, title, capabilityId, options? })` — registers
   a panel the **host** builds for you (see "Host capabilities" below).
 - `api.panels.hasHostCapability(capabilityId)` — whether this build exposes it.
 - `api.panels.open(panelId, opts?)` / `close(instanceId)` / `getOpenInstances()`.
   `opts.mode`: `split-left|split-right|split-top|split-bottom|tab-before|tab-after`,
-  `opts.ref`: widget id.
+  `opts.ref`: widget id, `opts.state`: JSON instance state (see below).
+
+### Per-instance state
+
+Each panel instance can carry state: `open(panelId, { state })` passes a plain
+JSON object that the host persists with the layout and hands back to
+`createWidget(instanceId, host, state)` after a restart. Use it for anything that
+belongs to *that tab* — which agent a chat talks to, which file a viewer shows.
+
+- State must be JSON (objects, arrays, strings, numbers, booleans, null). The host
+  rejects anything else, because it could not survive a save/restore.
+- Never put "the current thing" in plugin-level state: two open tabs of the same
+  panel type must not fight over one value.
+- Derive per-tab data from `state` + `instanceId` on mount; do not assume the
+  widget that exists now is the one that opened the tab originally.
 - `api.commands.register({ id, title, execute })`.
 - `api.ui` — `React`, `widgets`, `createReactWidget(render)`.
 - `api.services` — `provide/get/has` plus `remote<T>(serviceId)`.
@@ -144,7 +158,7 @@ export function activate(api: FrontendPluginAPI): void {
     api.panels.register({
         id: 'main',
         title: 'Files',
-        createWidget: (instanceId, host) => myWidget(host, instanceId)
+        createWidget: (instanceId, host, state) => myWidget(host, instanceId, state)
     });
     api.commands.register({
         id: 'bruce.files.open',
@@ -246,15 +260,20 @@ It throws in backend code — backend plugins use `get` in-process.
    another native surface, adopt a host capability. Bundling `@theia/*` or
    `xterm` into a plugin produces duplicate containers and widgets the shell
    cannot adopt — the bundler allowlist will not link them anyway.
-6. **Build real functionality.** No test-only, placeholder or demo plugins, and
+6. **One panel instance, one session.** If a panel owns a process, connection or
+   transcript, key it by the instance id — never by "the current one". Opening a
+   second tab must not disturb the first, and a new tab is a new tab
+   (`open(panelId, { ref: instanceId, mode: 'tab-after', state })`), not a
+   reconfiguration of the open one.
+7. **Build real functionality.** No test-only, placeholder or demo plugins, and
    no demo panels dressed up as features; a scaffold must exercise the real
    contract and then be completed.
-7. **Theme with host variables.** The application defaults to the dark theme
+8. **Theme with host variables.** The application defaults to the dark theme
    (`theia-dark`), so hardcoded colors break it. Style with
    `var(--theia-editor-background)`, `var(--theia-editor-foreground)`,
    `var(--theia-descriptionForeground)`, `var(--theia-panel-border)` and friends;
    a literal `#fff` or `white` background is a bug, not a default.
-8. **Never promise code unload.** Native ESM module records may stay cached;
+9. **Never promise code unload.** Native ESM module records may stay cached;
    reload/restart is the answer when a module cannot be replaced safely.
 
 ## Checklist before you finish

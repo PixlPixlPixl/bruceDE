@@ -1,11 +1,13 @@
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shell';
 import { Widget } from '@lumino/widgets';
-import { WorkspacePanelRegistry } from './workspace-panel-registry.js';
+import { WorkspacePanelRegistry, WorkspacePanelState } from './workspace-panel-registry.js';
 
 export interface WorkspacePanelOpenOptions {
     readonly ref?: Widget;
     readonly mode?: ApplicationShell.WidgetOptions['mode'];
+    /** Instance state handed to the panel definition and saved with the layout. */
+    readonly state?: WorkspacePanelState;
 }
 
 /**
@@ -27,7 +29,7 @@ export class WorkspaceDockingService {
         panelTypeId: string,
         options: WorkspacePanelOpenOptions = {}
     ): Promise<Widget> {
-        const widget = await this.registry.createPanel(panelTypeId);
+        const widget = await this.registry.createPanel(panelTypeId, { state: options.state });
         await this.shell.addWidget(widget, {
             area: 'main',
             ref: options.ref,

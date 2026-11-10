@@ -108,7 +108,8 @@ export class PluginKernel {
                     {
                         id: typeId,
                         title: definition.title,
-                        createWidget: instanceId => definition.createWidget(instanceId, this.panelHostTools)
+                        createWidget: (instanceId, state) =>
+                            definition.createWidget(instanceId, this.panelHostTools, state)
                     },
                     pluginId
                 );
@@ -151,7 +152,7 @@ export class PluginKernel {
             open: async (panelId: string, options: PanelOpenOptions = {}) => {
                 const mode = options.mode ? DOCK_MODES[options.mode] : undefined;
                 const ref = options.ref ? docking.getWidgetById(options.ref) : undefined;
-                const widget = await docking.openPanel(panelTypeId(panelId), { ref, mode });
+                const widget = await docking.openPanel(panelTypeId(panelId), { ref, mode, state: options.state });
                 instanceIds.add(widget.id);
                 widget.disposed.connect(() => instanceIds.delete(widget.id));
                 return widget.id;

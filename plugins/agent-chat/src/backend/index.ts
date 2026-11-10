@@ -17,10 +17,10 @@ const MAX_ENTRIES = 400;
 /**
  * Agent CLIs this plugin knows how to drive.
  *
- * This is a **detection list, not a shipped roster**: an entry only becomes an
- * agent in the UI once its executable resolves on `PATH`, so the panel never
- * offers an agent the user cannot run. Any ACP agent can also be added without a
- * code change through `BRUCEDE_AGENTS`.
+ * Entries carry their availability: the picker shows installed agents in full
+ * colour and the rest dimmed, so the user can see what this build supports
+ * without being able to launch something that is not there. Any ACP agent can
+ * also be added without a code change through `BRUCEDE_AGENTS`.
  *
  * Two protocols are supported, because the ecosystem is not uniform: most agents
  * speak ACP, Pi speaks its own RPC mode and has no ACP mode. The handshake is the
@@ -55,7 +55,9 @@ interface AgentLink {
 }
 
 interface LiveSession {
-    readonly agent: AgentDescriptor;
+    readonly sessionId: string;
+    agentId: string;
+    agent?: AgentDescriptor;
     link?: AgentLink;
     status: AgentState['status'];
     entries: ChatEntry[];
@@ -65,38 +67,81 @@ interface LiveSession {
 }
 
 /**
- * Backend half of agent-chat: one child process per installed agent.
+ * Backend half of agent-chat: one child process per chat session.
  *
- * It publishes `agent.sessions` so the renderer can list agents, read the
- * transcript and send a prompt. Every child process is disposed when the plugin
- * unloads.
+ * Session ids are panel instance ids, so two open chat tabs never share a
+ * transcript or a process. It publishes `agent.sessions` so the renderer can
+ * list agents, bind a session, read the transcript and send a prompt. Every
+ * child process is disposed when its session is released or the plugin unloads.
  */
 export function activate(api: BackendPluginAPI): void {
     const agents = discoverAgents();
     const cwd = api.workspace.cwd;
     const sessions = new Map<string, LiveSession>();
 
-    for (const agent of agents) {
-        sessions.set(agent.id, { agent, status: 'idle', entries: [], streamingText: false });
-    }
+    const agentById = (agentId: string): AgentDescriptor => {
+        const agent = agents.find(candidate => candidate.id === agentId);
+        if (!agent) {
+            throw new Error(`Unknown agent "${agentId}".`);
+        }
+        return agent;
+    };
 
-    const state = (agentId: string): AgentState => {
-        const session = requireSession(sessions, agentId);
-        return {
-            agentId,
-            status: session.status,
-            entries: [...session.entries],
-            error: session.error
+    const snapshot = (session: LiveSession): AgentState => ({
+        agentId: session.agentId,
+        status: session.status,
+        entries: [...session.entries],
+        error: session.error
+    });
+
+    const sessionFor = (sessionId: string): LiveSession => {
+        const existing = sessions.get(sessionId);
+        if (existing) {
+            return existing;
+        }
+        // A restored panel can ask for its state before it re-binds; an unknown
+        // session is simply empty, not an error.
+        const created: LiveSession = {
+            sessionId,
+            agentId: '',
+            status: 'idle',
+            entries: [],
+            streamingText: false
         };
+        sessions.set(sessionId, created);
+        return created;
     };
 
     const service: AgentSessionsService = {
         listAgents: () => agents,
-        state,
 
-        send: async (agentId, text) => {
-            const session = requireSession(sessions, agentId);
-            if (session.status === 'running') {
+        openSession: async (sessionId, agentId) => {
+            const agent = agentById(agentId);
+            const session = sessionFor(sessionId);
+            if (session.agentId === agentId) {
+                return snapshot(session);
+            }
+            // Switching agents on an existing tab must not leave the previous
+            // child running or its transcript behind.
+            session.link?.dispose();
+            session.link = undefined;
+            session.agentId = agentId;
+            session.agent = agent;
+            session.entries = [];
+            session.status = 'idle';
+            session.error = undefined;
+            session.streamingText = false;
+            return snapshot(session);
+        },
+
+        state: async sessionId => snapshot(sessionFor(sessionId)),
+
+        send: async (sessionId, text) => {
+            const session = sessionFor(sessionId);
+            if (!session.agent) {
+                throw new Error('This chat has no agent yet. Pick one with the + button.');
+            }
+            if (session.status === 'running' || session.status === 'starting') {
                 throw new Error('This agent is still answering the previous prompt.');
             }
             // Re-probe at send time: the user may have installed the CLI since
@@ -107,31 +152,44 @@ export function activate(api: BackendPluginAPI): void {
                 session.error = `"${session.agent.command}" was not found on PATH.`;
                 pushEntry(session, { role: 'user', text });
                 pushEntry(session, { role: 'system', text: session.error });
-                return state(agentId);
+                return snapshot(session);
             }
             pushEntry(session, { role: 'user', text });
             session.streamingText = false;
             session.status = 'running';
             session.error = undefined;
             void runTurn(session, cwd, text).catch(() => undefined);
-            return state(agentId);
+            return snapshot(session);
         },
 
-        cancel: async agentId => {
-            const session = requireSession(sessions, agentId);
+        cancel: async sessionId => {
+            const session = sessionFor(sessionId);
             if (session.link) {
                 session.link.cancel();
                 pushEntry(session, { role: 'system', text: 'Turn cancelled.' });
             }
             session.status = 'idle';
-            return state(agentId);
+            return snapshot(session);
         },
 
-        reset: async agentId => {
-            const session = requireSession(sessions, agentId);
+        reset: async sessionId => {
+            const session = sessionFor(sessionId);
             session.link?.dispose();
-            sessions.set(agentId, { agent: session.agent, status: 'idle', entries: [], streamingText: false });
-            return state(agentId);
+            session.link = undefined;
+            session.entries = [];
+            session.status = 'idle';
+            session.error = undefined;
+            session.streamingText = false;
+            return snapshot(session);
+        },
+
+        release: async sessionId => {
+            const session = sessions.get(sessionId);
+            if (!session) {
+                return;
+            }
+            session.link?.dispose();
+            sessions.delete(sessionId);
         }
     };
 
@@ -152,7 +210,7 @@ export function activate(api: BackendPluginAPI): void {
             // ACP resolves the prompt when the turn ends; Pi answers as soon as
             // it accepts the prompt and reports completion through events, so it
             // keeps the session `running` until `agent_settled`.
-            if (session.agent.protocol === 'acp') {
+            if (session.agent?.protocol === 'acp') {
                 session.status = 'idle';
             }
         } catch (error) {
@@ -170,15 +228,24 @@ export function activate(api: BackendPluginAPI): void {
         session.link = undefined;
         session.status = 'starting';
 
-        const link = session.agent.protocol === 'pi-rpc'
-            ? await startPi(session, workingDirectory)
-            : await startAcp(session, workingDirectory);
+        const agent = session.agent;
+        if (!agent) {
+            throw new Error('This chat has no agent yet.');
+        }
+
+        const link = agent.protocol === 'pi-rpc'
+            ? await startPi(session, agent, workingDirectory)
+            : await startAcp(session, agent, workingDirectory);
         session.link = link;
         return link;
     }
 
-    async function startAcp(session: LiveSession, workingDirectory: string): Promise<AgentLink> {
-        const connection = new AcpConnection(session.agent.command, session.agent.args, workingDirectory, {
+    async function startAcp(
+        session: LiveSession,
+        agent: AgentDescriptor,
+        workingDirectory: string
+    ): Promise<AgentLink> {
+        const connection = new AcpConnection(agent.command, agent.args, workingDirectory, {
             notification: (method, params) => {
                 if (method === 'session/update') {
                     appendAcpUpdate(session, params);
@@ -193,8 +260,8 @@ export function activate(api: BackendPluginAPI): void {
             const methods = initialized.authMethods.map(method => method.name ?? method.id).join(', ');
             connection.dispose();
             throw new Error(
-                `"${session.agent.name}" requires authentication (${methods}). `
-                + 'Log in with that agent CLI first, then reopen this panel.'
+                `"${agent.name}" requires authentication (${methods}). `
+                + 'Log in with that agent CLI first, then reopen this chat.'
             );
         }
         const sessionId = await client.newSession(workingDirectory);
@@ -210,8 +277,12 @@ export function activate(api: BackendPluginAPI): void {
         };
     }
 
-    async function startPi(session: LiveSession, workingDirectory: string): Promise<AgentLink> {
-        const connection = new PiRpcConnection(session.agent.command, session.agent.args, workingDirectory, {
+    async function startPi(
+        session: LiveSession,
+        agent: AgentDescriptor,
+        workingDirectory: string
+    ): Promise<AgentLink> {
+        const connection = new PiRpcConnection(agent.command, agent.args, workingDirectory, {
             event: record => appendPiEvent(session, record),
             uiRequest: record => answerPiUiRequest(session, connection, record),
             exit: reason => handleExit(session, reason)
@@ -243,7 +314,7 @@ export function activate(api: BackendPluginAPI): void {
     }
 }
 
-/** Rewrites ACP `session/update` notifications into transcript entries. */
+
 function appendAcpUpdate(session: LiveSession, params: Record<string, unknown>): void {
     const update = params.update as Record<string, unknown> | undefined;
     if (!update || typeof update.sessionUpdate !== 'string') {
@@ -408,14 +479,6 @@ function pushEntry(session: LiveSession, entry: ChatEntry): void {
     }
 }
 
-function requireSession(sessions: Map<string, LiveSession>, agentId: string): LiveSession {
-    const session = sessions.get(agentId);
-    if (!session) {
-        throw new Error(`Unknown agent "${agentId}".`);
-    }
-    return session;
-}
-
 /**
  * Agents come from `BRUCEDE_AGENTS` (authoritative; `BRUCEDE_ACP_AGENTS` is
  * still accepted as its old name) or the known list.
@@ -428,10 +491,9 @@ function discoverAgents(): AgentDescriptor[] {
         // a missing binary is reported instead of silently disappearing.
         return configured.map(candidate => toDescriptor(candidate, executableExists(candidate.command)));
     }
-    // Nothing configured: only agents that are actually installed are offered.
-    return KNOWN_AGENTS
-        .map(candidate => toDescriptor(candidate, executableExists(candidate.command)))
-        .filter(descriptor => descriptor.available);
+    // Nothing configured: every supported agent is listed with its availability,
+    // so the picker can show installed agents first and the rest as unavailable.
+    return KNOWN_AGENTS.map(candidate => toDescriptor(candidate, executableExists(candidate.command)));
 }
 
 function toDescriptor(candidate: AgentCandidate, available: boolean): AgentDescriptor {

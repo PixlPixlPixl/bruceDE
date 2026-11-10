@@ -9,6 +9,9 @@ The first-party Theia extension that provides BruceDE's user-controlled workspac
 - Registers panel types without automatically opening them.
 - Exposes WorkspacePanelRegistry, WorkspaceDockingService and the host services to plugins.
 - Persists the panel layout across sessions through theia's layout restorer.
+- Persists per-instance panel state alongside the layout: `open(panelId, { state })`
+  stores a plain JSON object that is validated, saved with the widget and handed
+  back to `createWidget(instanceId, host, state)` when the tab is rebuilt.
 - Ships no demo panels or demo commands: every panel comes from a plugin.
 
 Theia's ApplicationShell mainPanel is already a multiple-document TheiaDockPanel. This extension changes the root shell layout rather than implementing another docking engine.

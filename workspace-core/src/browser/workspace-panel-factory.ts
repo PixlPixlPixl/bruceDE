@@ -30,7 +30,8 @@ export class WorkspacePanelWidgetFactory implements WidgetFactory {
         return this.registry.instantiate(
             options.instanceId,
             options.panelTypeId,
-            parsed => new WorkspaceUnavailablePanel(parsed)
+            parsed => new WorkspaceUnavailablePanel(parsed),
+            options.state
         );
     }
 }

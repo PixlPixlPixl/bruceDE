@@ -19,7 +19,17 @@ export interface WorkspacePanelWidgetOptions {
     readonly panelTypeId: string;
     /** Stable instance id, e.g. `bruce.terminal:terminal.main.1`. */
     readonly instanceId: string;
+    /**
+     * JSON data the opening caller attached to this instance.
+     *
+     * It travels with the saved layout, so a restored instance is rebuilt with
+     * the same state it was created with.
+     */
+    readonly state?: WorkspacePanelState;
 }
+
+/** Per-instance panel state: plain JSON, as accepted by {@link PanelState}. */
+export type WorkspacePanelState = { readonly [key: string]: unknown };
 
 /** Validates options that were read back from persisted layout data. */
 export function isWorkspacePanelWidgetOptions(value: unknown): value is WorkspacePanelWidgetOptions {
@@ -27,10 +37,42 @@ export function isWorkspacePanelWidgetOptions(value: unknown): value is Workspac
         return false;
     }
     const record = value as Record<string, unknown>;
-    return typeof record.panelTypeId === 'string'
-        && record.panelTypeId.trim().length > 0
-        && typeof record.instanceId === 'string'
-        && record.instanceId.trim().length > 0;
+    if (typeof record.panelTypeId !== 'string' || record.panelTypeId.trim().length === 0) {
+        return false;
+    }
+    if (typeof record.instanceId !== 'string' || record.instanceId.trim().length === 0) {
+        return false;
+    }
+    return record.state === undefined || isPlainJson(record.state);
+}
+
+/**
+ * True for a value that survives `JSON.stringify` unchanged.
+ *
+ * Panel state is written into the saved layout, so accepting anything else would
+ * hand a restored panel a silently mutated object.
+ */
+function isPlainJson(value: unknown, depth = 0): boolean {
+    if (depth > 20) {
+        return false;
+    }
+    if (value === null || typeof value === 'string' || typeof value === 'boolean') {
+        return true;
+    }
+    if (typeof value === 'number') {
+        return Number.isFinite(value);
+    }
+    if (Array.isArray(value)) {
+        return value.every(entry => isPlainJson(entry, depth + 1));
+    }
+    if (typeof value === 'object') {
+        const prototype = Object.getPrototypeOf(value);
+        if (prototype !== Object.prototype && prototype !== null) {
+            return false;
+        }
+        return Object.values(value as Record<string, unknown>).every(entry => isPlainJson(entry, depth + 1));
+    }
+    return false;
 }
 
 /**
@@ -49,7 +91,7 @@ export interface WorkspacePanelDefinition {
      * while the workspace believed it owned a panel.
      */
     readonly hostPanel?: boolean;
-    readonly createWidget: (instanceId: string) => Widget | Promise<Widget>;
+    readonly createWidget: (instanceId: string, state?: WorkspacePanelState) => Widget | Promise<Widget>;
 }
 
 /** A registered panel definition together with the plugin that owns it. */
@@ -141,7 +183,8 @@ export class WorkspacePanelRegistry {
      * "unavailable" panel instead of throwing, so one disabled plugin cannot
      * break the whole restored workspace.
      */
-    async createPanel(panelTypeId: string, instanceId?: string): Promise<Widget> {
+    async createPanel(panelTypeId: string, options: { instanceId?: string; state?: WorkspacePanelState } = {}): Promise<Widget> {
+        const instanceId = options.instanceId;
         if (!this.definitions.has(panelTypeId)) {
             throw new Error('Unknown workspace panel type: ' + panelTypeId);
         }
@@ -149,12 +192,16 @@ export class WorkspacePanelRegistry {
         if (this.definitions.get(panelTypeId)?.definition.hostPanel) {
             // Host capability widgets persist themselves through their own Theia
             // factory; wrapping them here would double-register the instance.
-            return this.instantiate(resolvedId, panelTypeId, options => new WorkspaceUnavailablePanel(options));
+            return this.instantiate(resolvedId, panelTypeId, options => new WorkspaceUnavailablePanel(options), options.state);
         }
-        const options: WorkspacePanelWidgetOptions = { panelTypeId, instanceId: resolvedId };
+        const widgetOptions: WorkspacePanelWidgetOptions = {
+            panelTypeId,
+            instanceId: resolvedId,
+            ...(options.state === undefined ? {} : { state: options.state })
+        };
         const widget = await this.widgetManager.getOrCreateWidget<Widget>(
             WORKSPACE_PANEL_FACTORY_ID,
-            options
+            widgetOptions
         );
         this.track(widget, panelTypeId);
         return widget;
@@ -170,11 +217,12 @@ export class WorkspacePanelRegistry {
     async instantiate(
         instanceId: string,
         panelTypeId: string,
-        unavailable: (options: WorkspacePanelWidgetOptions) => Widget
+        unavailable: (options: WorkspacePanelWidgetOptions) => Widget,
+        state?: WorkspacePanelState
     ): Promise<Widget> {
         const registered = this.definitions.get(panelTypeId);
         const widget = registered
-            ? await registered.definition.createWidget(instanceId)
+            ? await registered.definition.createWidget(instanceId, state)
             : unavailable({ panelTypeId, instanceId });
         const title = registered?.definition.title ?? instanceId;
         // Host widgets (terminals) already carry a meaningful DOM id used by

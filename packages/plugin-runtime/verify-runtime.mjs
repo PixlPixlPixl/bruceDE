@@ -336,6 +336,32 @@ check(
     missingNamespaces.join(', ')
 );
 
+console.log('panel instance state');
+const panelApiSource = await readSource('packages/plugin-api/src/index.ts');
+const panelRegistrySource = await readSource('workspace-core/src/browser/workspace-panel-registry.ts');
+const panelFactorySource = await readSource('workspace-core/src/browser/workspace-panel-factory.ts');
+check(
+    'panels accept instance state',
+    panelApiSource.includes('export type PanelState') && panelApiSource.includes('readonly state?: PanelState'),
+    'PanelOpenOptions carries no state'
+);
+check(
+    'instance state reaches the panel definition',
+    panelRegistrySource.includes('createWidget(instanceId, state)')
+        && panelFactorySource.includes('options.state'),
+    'createWidget never receives the instance state'
+);
+check(
+    'instance state must survive a restart',
+    panelRegistrySource.includes('isPlainJson(record.state)'),
+    'non-JSON instance state could be silently dropped on restore'
+);
+check(
+    'the kernel forwards state to the docking service',
+    (await readSource('workspace-core/src/browser/plugin/plugin-kernel.ts')).includes('state: options.state'),
+    'plugin panels cannot pass instance state'
+);
+
 console.log('renderer panels and app defaults');
 const kernelSource = await readSource('workspace-core/src/browser/plugin/plugin-kernel.ts');
 check(
@@ -404,15 +430,34 @@ check(
     'a .cmd agent shim would fail with ENOENT on Windows'
 );
 check(
-    'the built-in agent catalog is a detection list, not a shipped roster',
-    agentChatBackend.includes('.filter(descriptor => descriptor.available)'),
-    'uninstalled agents would still appear as entries in the picker'
+    'the built-in agent catalog reports availability instead of hiding entries',
+    agentChatBackend.includes('toDescriptor(candidate, executableExists(candidate.command))')
+        && !agentChatBackend.includes('.filter(descriptor => descriptor.available)'),
+    'the picker cannot tell installed agents from missing ones'
 );
 check(
     'configured agents are listed even when their binary is missing',
     agentChatBackend.includes('executableExists(candidate.command)')
         && agentChatBackend.includes('if (configured) {'),
     'an explicit configuration cannot report a missing agent'
+);
+const agentChatFrontend = await readSource('plugins/agent-chat/src/frontend/index.tsx');
+check(
+    'installed agents are offered and missing ones are dimmed',
+    agentChatFrontend.includes('availableAgents') && agentChatFrontend.includes('unavailableAgents')
+        && agentChatFrontend.includes('disabled: !available'),
+    'the agent picker cannot distinguish availability'
+);
+check(
+    'a new chat opens a sibling tab instead of replacing the session',
+    agentChatFrontend.includes("mode: 'tab-after'") && agentChatFrontend.includes('state: newState'),
+    'starting another agent would discard the current session'
+);
+check(
+    'each chat panel owns one backend session',
+    agentChatFrontend.includes('sessions.openSession(instanceId')
+        && agentChatFrontend.includes('sessions.release(instanceId'),
+    'session ids are not tied to panel instances'
 );
 check(
     'both protocols share one session bookkeeping path',

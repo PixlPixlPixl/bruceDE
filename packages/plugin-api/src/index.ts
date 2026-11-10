@@ -148,9 +148,21 @@ export type DockMode =
     | 'tab-before'
     | 'tab-after';
 
+/**
+ * JSON-serialisable data a panel instance carries.
+ *
+ * The host persists it with the widget layout and hands it back when the panel is
+ * rebuilt, so an instance can remember what it was opened for (which agent a
+ * chat tab talks to, which file a viewer shows, and so on). Only plain JSON
+ * values are accepted: anything else could not survive a restart.
+ */
+export type PanelState = { readonly [key: string]: unknown };
+
 export interface PanelOpenOptions {
     readonly ref?: string;
     readonly mode?: DockMode;
+    /** Instance state passed to {@link PanelDefinition.createWidget}. */
+    readonly state?: PanelState;
 }
 
 /**
@@ -177,8 +189,15 @@ export interface PanelDefinition {
     /**
      * Creates a fresh widget for each panel instance. The host owns disposal:
      * once the owning plugin unloads the shell closes every instance it opened.
+     *
+     * `state` is whatever the opening caller passed to `panels.open`, restored
+     * from the saved layout when the instance is rebuilt after a restart.
      */
-    readonly createWidget: (instanceId: string, host: PanelHostTools) => Widget | Promise<Widget>;
+    readonly createWidget: (
+        instanceId: string,
+        host: PanelHostTools,
+        state?: PanelState
+    ) => Widget | Promise<Widget>;
 }
 
 /**

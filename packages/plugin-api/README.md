@@ -14,3 +14,11 @@ Keep this package independent of Cordis internals. Additive API changes are pref
 - `ResourceUri`, `ResourceSelection`, `ResourceStat`, `WorkspaceResourcesService`, `WorkspaceSelectionService` — the URI-based cross-plugin data contracts.
 
 Reserved but not yet provided by the host: `git.repository` (`WORKSPACE_SERVICE_IDS.gitRepository`), `agent.sessions` (`WORKSPACE_SERVICE_IDS.agentSessions`), and `git/changes-updated` (`WORKSPACE_EVENT_IDS.changesUpdated`). Feature plugins fill these in; the ids are frozen so a plugin can code against them now.
+
+## Per-instance panel state
+
+`PanelOpenOptions.state` is a plain JSON object that belongs to one panel
+instance. The host stores it with the saved layout and passes it back to
+`PanelDefinition.createWidget(instanceId, host, state)` after a restart, so a
+restored tab remembers what it was opened for. Use it instead of plugin-level
+"current selection" state whenever a panel type can be open more than once.
