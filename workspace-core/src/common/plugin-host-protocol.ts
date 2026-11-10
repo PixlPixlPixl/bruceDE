@@ -114,6 +114,15 @@ export interface PluginHostSnapshot {
  * what the authoritative state is after a trust/enable change.
  */
 export interface PluginHostClient {
+    /**
+     * Returns the plugin's frontend ESM bundle as text.
+     *
+     * The Electron renderer runs from a `file://` origin, so it cannot `fetch`
+     * an HTTP route on the backend (cross-origin, no CORS headers). Handing the
+     * source over the existing RPC channel works for both targets; the browser
+     * target can still use {@link PLUGIN_ASSET_PREFIX} directly.
+     */
+    readFrontendBundle(pluginId: string): Promise<string>;
     getSnapshot(): Promise<PluginHostSnapshot>;
     /** Re-scans the plugin roots and returns the updated snapshot. */
     refresh(): Promise<PluginHostSnapshot>;

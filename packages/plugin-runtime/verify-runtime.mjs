@@ -16,9 +16,11 @@ const root = path.resolve(here, '..', '..');
 const { validatePluginManifest, PluginManifestError, satisfiesVersion, CordisPluginManager } = await import(
     './lib/index.js'
 );
-const { discoverPlugins } = await import(path.join(root, 'workspace-core/lib/node/plugin-discovery.js'));
+const { discoverPlugins, normalizeRelativePath, toDescriptor } = await import(
+    path.join(root, 'workspace-core/lib/node/plugin-discovery.js')
+);
 const { rewriteHostModuleSpecifiers } = await import(
-    path.join(root, 'workspace-core/lib/browser/plugin/host-modules.js')
+    path.join(root, 'workspace-core/lib/common/host-module-rewrite.js')
 );
 const { PluginEventBus, PluginServiceRegistry } = await import(
     path.join(root, 'workspace-core/lib/common/plugin-registries.js')
@@ -150,6 +152,13 @@ check(
     HOST_PANEL_CAPABILITIES.terminal === 'brucede.terminal',
     String(HOST_PANEL_CAPABILITIES.terminal)
 );
+check(
+    'capability ids cannot look like module paths or class names',
+    HOST_PANEL_CAPABILITY_PATTERN.test('brucede.terminal')
+        && !HOST_PANEL_CAPABILITY_PATTERN.test('@theia/terminal')
+        && !HOST_PANEL_CAPABILITY_PATTERN.test('TerminalWidget'),
+    'the capability id pattern accepted a non-capability id'
+);
 
 console.log('plugin bundles stay inside the shared-module allowlist');
 const hostModuleSpecifiers = Object.keys(HOST_MODULES).map(bare => `/brucede-host-modules/${HOST_MODULES[bare]}`);
@@ -269,6 +278,47 @@ check(
     'the panel registry marks host-capability panels',
     registrySource.includes('isHostPanelType') && registrySource.includes('hostPanel'),
     'hostPanel distinction missing from the panel registry'
+);
+
+console.log('plugin bundle delivery');
+check(
+    'manifest entrypoints are normalized for HTTP',
+    normalizeRelativePath('./dist/frontend.js') === 'dist/frontend.js',
+    normalizeRelativePath('./dist/frontend.js')
+);
+check(
+    'served frontend URLs contain no "./" segment',
+    discovery.plugins.every(plugin => {
+        const url = toDescriptor(plugin).frontendUrl;
+        return !url || !url.includes('/./');
+    }),
+    'a descriptor URL still carries "./"'
+);
+const protocolSource = await readSource('workspace-core/src/common/plugin-host-protocol.ts');
+check(
+    'the host can hand bundle text over the RPC channel',
+    protocolSource.includes('readFrontendBundle'),
+    'PluginHostClient.readFrontendBundle missing'
+);
+const managerSource = await readSource('workspace-core/src/browser/plugin/plugin-manager.ts');
+check(
+    'file:// renderers load bundles over RPC',
+    managerSource.includes('readFrontendBundle'),
+    'plugin manager never uses the RPC bundle path'
+);
+check(
+    'same-origin renderers use the served URL',
+    managerSource.includes('fetch(frontendUrl'),
+    'plugin manager has no HTTP bundle path'
+);
+const hostModulesSource = await readSource('workspace-core/src/browser/plugin/host-modules.ts');
+const missingNamespaces = Object.keys(HOST_MODULES).filter(
+    bare => !hostModulesSource.includes(`'${bare}':`)
+);
+check(
+    'every shared host module has a static namespace import',
+    missingNamespaces.length === 0,
+    missingNamespaces.join(', ')
 );
 
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);

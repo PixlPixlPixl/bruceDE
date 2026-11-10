@@ -123,6 +123,27 @@ overridden in `canvas-terminal.ts`:
 - `CanvasTerminalFrontendContribution` turns `initializeLayout` into a no-op so a
   first start still shows an empty canvas.
 
+## Bundle delivery
+
+The backend serves every plugin's ESM bundle, but the renderer chooses how to
+fetch it:
+
+- **Browser target** — the renderer origin is `http://…`, so it fetches the
+  served URL under `PLUGIN_ASSET_PREFIX` (same origin, no CORS needed).
+- **Electron target** — the renderer runs from a `file://` origin. An HTTP URL on
+  the backend is cross-origin and the asset route sends no CORS headers, so
+  `fetch` fails there no matter how the URL is built (`TypeError: Failed to
+fetch`). The bundle therefore travels over the existing RPC channel via
+  `PluginHostClient.readFrontendBundle`.
+
+Both paths end in the same place: the source is rewritten so
+`/brucede-host-modules/<file>.js` specifiers point at blob URLs that re-export
+the host's own module instances, then imported.
+
+Entrypoint paths in `plugin.json` are normalized before they become URLs
+(`./dist/frontend.js` → `dist/frontend.js`); the asset route reads the remainder
+of the request URL instead of relying on a wildcard param.
+
 ## Host services
 
 The host publishes its own services under the `bruce.workspace` owner before any plugin activates:

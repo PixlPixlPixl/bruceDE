@@ -9,6 +9,12 @@ import { PluginKernel, type PluginKernelOptions } from './plugin-kernel.js';
 export interface PluginFrontendHostOptions extends PluginKernelOptions {
     readonly docking: WorkspaceDockingService;
     readonly onError?: (pluginId: string, error: unknown) => void;
+    /**
+     * Returns the plugin's frontend bundle text. The renderer cannot decide this
+     * on its own: an Electron renderer runs from a `file://` origin and has to go
+     * through the backend RPC, while the browser target can fetch the served URL.
+     */
+    readonly readBundleSource: (pluginId: string, frontendUrl: string) => Promise<string>;
 }
 
 /**
@@ -68,7 +74,7 @@ export class PluginFrontendHost {
         const record = await this.manager.load<FrontendPluginAPI>({
             manifest,
             loadModule: async () => {
-                const source = await this.fetchBundle(descriptor.frontendUrl!);
+                const source = await this.fetchBundle(manifest.id, descriptor.frontendUrl!);
                 const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
                 try {
                     return await import(/* @vite-ignore */ url);
@@ -106,12 +112,8 @@ export class PluginFrontendHost {
         this.hostModules.dispose();
     }
 
-    private async fetchBundle(url: string): Promise<string> {
-        const response = await fetch(url, { cache: 'no-cache' });
-        if (!response.ok) {
-            throw new Error(`Failed to load plugin bundle ${url}: HTTP ${response.status}`);
-        }
-        const source = await response.text();
+    private async fetchBundle(pluginId: string, url: string): Promise<string> {
+        const source = await this.options.readBundleSource(pluginId, url);
         return rewriteHostModuleSpecifiers(source, this.hostModules.getRewriteMap());
     }
 }

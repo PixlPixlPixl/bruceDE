@@ -204,7 +204,7 @@ export function toDescriptor(plugin: DiscoveredPlugin): PluginDescriptor {
         builtIn: !isUserPluginPath(plugin.directory),
         directory: plugin.directory,
         frontendUrl: plugin.frontendEntrypoint && frontendPath
-            ? `${PLUGIN_ASSET_PREFIX}/${encodeURIComponent(plugin.manifest.id)}/${toPosixPath(frontendPath)}`
+            ? `${PLUGIN_ASSET_PREFIX}/${encodeURIComponent(plugin.manifest.id)}/${normalizeRelativePath(frontendPath)}`
             : undefined,
         backendEntrypoint: plugin.backendEntrypoint,
         dependencyIds: Object.keys(plugin.manifest.dependencies ?? {}),
@@ -223,6 +223,15 @@ export function toDescriptor(plugin: DiscoveredPlugin): PluginDescriptor {
 
 export function toPosixPath(value: string): string {
     return value.replace(/\\/g, '/');
+}
+
+/**
+ * Manifest entrypoints are written as `./dist/frontend.js`; the served URL must
+ * not carry the leading `./` or the browser asks for a normalization the asset
+ * route does not perform.
+ */
+export function normalizeRelativePath(value: string): string {
+    return toPosixPath(value).replace(/^(\.\/)+/, '').replace(/^\/+/, '');
 }
 
 function describeError(error: unknown): string {

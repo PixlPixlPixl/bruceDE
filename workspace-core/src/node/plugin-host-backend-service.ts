@@ -105,6 +105,17 @@ export class PluginHostBackendService implements BackendApplicationContribution,
         });
     }
 
+    async readFrontendBundle(pluginId: string): Promise<string> {
+        await this.ready;
+        const plugin = this.requirePlugin(pluginId);
+        if (!plugin.frontendEntrypoint) {
+            throw new Error(`Plugin "${pluginId}" declares no frontend entrypoint.`);
+        }
+        // `frontendEntrypoint` was resolved during discovery and validated to be
+        // an existing file inside the plugin folder.
+        return fs.readFile(plugin.frontendEntrypoint, 'utf8');
+    }
+
     async getSnapshot(): Promise<PluginHostSnapshot> {
         await this.ready;
         return this.snapshot();
@@ -221,7 +232,10 @@ export class PluginHostBackendService implements BackendApplicationContribution,
             response.status(404).type('text/plain').send(`Unknown plugin: ${pluginId}`);
             return;
         }
-        const relative = decodeURIComponent(String(request.params[0] ?? ''));
+        // Inside `app.use(<mount>, handler)` Express rewrites `request.url` to the
+        // part after the mount path; `params[0]` only exists for an explicit
+        // wildcard segment, so read the remainder from the URL instead.
+        const relative = safeDecode(request.url.split('?')[0] ?? '').replace(/^\/+/, '');
         if (!relative) {
             response.status(404).type('text/plain').send('Missing asset path.');
             return;
@@ -245,5 +259,14 @@ export class PluginHostBackendService implements BackendApplicationContribution,
         } catch {
             response.status(404).type('text/plain').send(`Asset not found: ${relative}`);
         }
+    }
+}
+
+/** `decodeURIComponent` that never throws on malformed input. */
+function safeDecode(value: string): string {
+    try {
+        return decodeURIComponent(value);
+    } catch {
+        return value;
     }
 }

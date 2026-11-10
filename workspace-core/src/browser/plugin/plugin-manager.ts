@@ -77,6 +77,7 @@ export class PluginManager implements FrontendApplicationContribution {
             services: this.services,
             events: this.events,
             hostPanelFactories: this.hostPanels,
+            readBundleSource: (pluginId, frontendUrl) => this.readBundleSource(pluginId, frontendUrl),
             invokeRemote: (serviceId, method, args) => this.serviceBridge.invoke(serviceId, method, args),
             onError: (pluginId, error) => {
                 void this.backend.reportError(pluginId, error instanceof Error ? error.message : String(error));
@@ -156,6 +157,28 @@ export class PluginManager implements FrontendApplicationContribution {
         this.emit();
     }
 
+    /**
+     * Loads a plugin's bundle text.
+     *
+     * An Electron renderer runs from a `file://` origin, so an HTTP URL on the
+     * backend is cross-origin and the asset route sends no CORS headers: `fetch`
+     * fails no matter how the URL is built. The bundle therefore travels over the
+     * existing RPC channel there. The browser target is same-origin and uses the
+     * served URL, keeping the payload off the RPC socket.
+     */
+    protected async readBundleSource(pluginId: string, frontendUrl: string): Promise<string> {
+        const sameOrigin = typeof location !== 'undefined'
+            && (location.protocol === 'http:' || location.protocol === 'https:');
+        if (sameOrigin) {
+            const response = await fetch(frontendUrl, { cache: 'no-cache' });
+            if (!response.ok) {
+                throw new Error(`Failed to load plugin bundle ${frontendUrl}: HTTP ${response.status}`);
+            }
+            return response.text();
+        }
+        return this.backend.readFrontendBundle(pluginId);
+    }
+
     isEnabled(pluginId: string): boolean {
         return this.enabledIds.has(pluginId);
     }
@@ -170,8 +193,15 @@ export class PluginManager implements FrontendApplicationContribution {
         }
         for (const pluginId of this.snapshot.enabled) {
             const descriptor = this.snapshot.plugins.find(candidate => candidate.id === pluginId);
-            if (descriptor) {
+            if (!descriptor) {
+                continue;
+            }
+            try {
                 await this.activate(descriptor);
+            } catch (error) {
+                // One broken plugin must never stop the remaining ones.
+                // eslint-disable-next-line no-console
+                console.error(`[plugin-host] Frontend plugin "${pluginId}" threw during activation:`, error);
             }
         }
     }
@@ -179,7 +209,9 @@ export class PluginManager implements FrontendApplicationContribution {
     protected async activate(descriptor: PluginDescriptor): Promise<void> {
         const record = await this.frontend.load(descriptor, toManifest(descriptor));
         if (record?.state === 'failed') {
-            await this.messages.error(
+            // Not awaited: the dialog stays until the user dismisses it, and the
+            // remaining plugins must not wait for that.
+            void this.messages.error(
                 nls.localize('brucede/pluginRuntime', 'Plugin "{0}" failed to activate.', descriptor.id)
             );
         }
