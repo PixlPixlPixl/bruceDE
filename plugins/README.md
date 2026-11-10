@@ -1,5 +1,9 @@
 # Native plugins
 
+Agent instructions for adding a plugin live in [AGENTS.md](./AGENTS.md). Read it
+before writing code here; it covers the manifest, build, `activate(api)` contract,
+and the rules that keep a plugin self-contained.
+
 Each child folder is a self-contained feature package. A plugin owns its manifest, package metadata, frontend/backend source, assets, and built ESM bundles. Development copies live in this repository; user-installed copies live in `~/.brucede/plugins`.
 
 All plugins are trusted native code. Frontend code runs in the normal Theia renderer and backend code in the normal Node backend. There is no plugin sandbox or per-plugin worker. The plugin manager displays and requires acceptance of the full-system-access warning before enabling third-party plugins.
