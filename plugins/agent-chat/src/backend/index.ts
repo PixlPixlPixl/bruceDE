@@ -1,40 +1,69 @@
-import { accessSync, constants, statSync } from 'node:fs';
-import { join, delimiter } from 'node:path';
 import type { BackendPluginAPI } from '@brucede/plugin-api';
 import { WORKSPACE_SERVICE_IDS } from '@brucede/plugin-api';
 import { AcpClient, AcpConnection } from '../acp.js';
-import type { AgentDescriptor, AgentSessionsService, AgentState, ChatEntry } from '../shared.js';
+import { PiRpcConnection } from '../pi-rpc.js';
+import { executableExists } from '../spawn.js';
+import type {
+    AgentDescriptor,
+    AgentProtocol,
+    AgentSessionsService,
+    AgentState,
+    ChatEntry
+} from '../shared.js';
 
 /** Transcripts are capped so a long session cannot flood the RPC channel. */
 const MAX_ENTRIES = 400;
 
 /**
- * ACP-capable CLIs this plugin knows how to launch. The `initialize` handshake
- * is the real availability check; `available` only reports whether the binary
- * exists, so a changed flag surfaces as an ACP error in the transcript instead
- * of a silent failure.
+ * Agent CLIs this plugin knows how to drive.
+ *
+ * Two protocols are supported, because the ecosystem is not uniform: most agents
+ * speak ACP, Pi speaks its own RPC mode and has no ACP mode. The handshake is the
+ * real availability check; `available` only reports whether the binary resolves,
+ * so a changed flag surfaces as a protocol error in the transcript instead of a
+ * silent failure.
  */
-const KNOWN_AGENTS: readonly Omit<AgentDescriptor, 'available'>[] = [
-    { id: 'gemini', name: 'Gemini CLI', command: 'gemini', args: ['--experimental-acp'] },
-    { id: 'claude-code-acp', name: 'Claude Code (ACP)', command: 'claude-code-acp', args: [] },
-    { id: 'opencode', name: 'OpenCode', command: 'opencode', args: ['acp'] }
+const KNOWN_AGENTS: readonly AgentCandidate[] = [
+    { id: 'pi', name: 'Pi', protocol: 'pi-rpc', command: 'pi', args: ['--mode', 'rpc', '--no-session'] },
+    { id: 'gemini', name: 'Gemini CLI', protocol: 'acp', command: 'gemini', args: ['--experimental-acp'] },
+    { id: 'claude-code-acp', name: 'Claude Code (ACP)', protocol: 'acp', command: 'claude-code-acp', args: [] },
+    { id: 'opencode', name: 'OpenCode', protocol: 'acp', command: 'opencode', args: ['acp'] }
 ];
+
+type AgentCandidate = Omit<AgentDescriptor, 'available'>;
+
+/**
+ * One running agent conversation, protocol-independent.
+ *
+ * The session bookkeeping (status, transcript, error handling) is identical for
+ * both protocols, so it lives in one place and each protocol only has to
+ * implement start/prompt/cancel/dispose.
+ */
+interface AgentLink {
+    readonly alive: boolean;
+    /** Announces the prompt; resolves once the agent accepted it. */
+    prompt(text: string): Promise<void>;
+    /** Asks the agent to stop the current turn. */
+    cancel(): void;
+    /** Releases the child process. */
+    dispose(): void;
+}
 
 interface LiveSession {
     readonly agent: AgentDescriptor;
-    connection?: AcpConnection;
-    client?: AcpClient;
-    sessionId?: string;
+    link?: AgentLink;
     status: AgentState['status'];
     entries: ChatEntry[];
     error?: string;
+    /** State of the transcript under streaming updates. */
+    streamingText: boolean;
 }
 
 /**
- * Backend half of agent-chat: an ACP client per installed agent.
+ * Backend half of agent-chat: one child process per installed agent.
  *
  * It publishes `agent.sessions` so the renderer can list agents, read the
- * transcript and send a prompt. Every child process is killed when the plugin
+ * transcript and send a prompt. Every child process is disposed when the plugin
  * unloads.
  */
 export function activate(api: BackendPluginAPI): void {
@@ -43,7 +72,7 @@ export function activate(api: BackendPluginAPI): void {
     const sessions = new Map<string, LiveSession>();
 
     for (const agent of agents) {
-        sessions.set(agent.id, { agent, status: 'idle', entries: [] });
+        sessions.set(agent.id, { agent, status: 'idle', entries: [], streamingText: false });
     }
 
     const state = (agentId: string): AgentState => {
@@ -76,6 +105,7 @@ export function activate(api: BackendPluginAPI): void {
                 return state(agentId);
             }
             pushEntry(session, { role: 'user', text });
+            session.streamingText = false;
             session.status = 'running';
             session.error = undefined;
             void runTurn(session, cwd, text).catch(() => undefined);
@@ -84,8 +114,8 @@ export function activate(api: BackendPluginAPI): void {
 
         cancel: async agentId => {
             const session = requireSession(sessions, agentId);
-            if (session.client && session.sessionId) {
-                session.client.cancel(session.sessionId);
+            if (session.link) {
+                session.link.cancel();
                 pushEntry(session, { role: 'system', text: 'Turn cancelled.' });
             }
             session.status = 'idle';
@@ -94,8 +124,8 @@ export function activate(api: BackendPluginAPI): void {
 
         reset: async agentId => {
             const session = requireSession(sessions, agentId);
-            session.connection?.dispose();
-            sessions.set(agentId, { agent: session.agent, status: 'idle', entries: [] });
+            session.link?.dispose();
+            sessions.set(agentId, { agent: session.agent, status: 'idle', entries: [], streamingText: false });
             return state(agentId);
         }
     };
@@ -105,21 +135,21 @@ export function activate(api: BackendPluginAPI): void {
     // Native handles are invisible to Cordis; the plugin must release them itself.
     api.onDispose(() => {
         for (const session of sessions.values()) {
-            session.connection?.dispose();
+            session.link?.dispose();
         }
     });
 
     /** Starts the child (if needed) and runs exactly one prompt turn. */
     async function runTurn(session: LiveSession, workingDirectory: string, text: string): Promise<void> {
         try {
-            await ensureStarted(session, workingDirectory);
-            const client = session.client;
-            const sessionId = session.sessionId;
-            if (!client || !sessionId) {
-                throw new Error('ACP session was not established.');
+            const link = await ensureStarted(session, workingDirectory);
+            await link.prompt(text);
+            // ACP resolves the prompt when the turn ends; Pi answers as soon as
+            // it accepts the prompt and reports completion through events, so it
+            // keeps the session `running` until `agent_settled`.
+            if (session.agent.protocol === 'acp') {
+                session.status = 'idle';
             }
-            await client.prompt(sessionId, text);
-            session.status = 'idle';
         } catch (error) {
             session.status = 'error';
             session.error = describeError(error);
@@ -127,46 +157,89 @@ export function activate(api: BackendPluginAPI): void {
         }
     }
 
-    async function ensureStarted(session: LiveSession, workingDirectory: string): Promise<void> {
-        if (session.connection?.alive && session.client && session.sessionId) {
-            return;
+    async function ensureStarted(session: LiveSession, workingDirectory: string): Promise<AgentLink> {
+        if (session.link?.alive) {
+            return session.link;
         }
+        session.link?.dispose();
+        session.link = undefined;
         session.status = 'starting';
+
+        const link = session.agent.protocol === 'pi-rpc'
+            ? await startPi(session, workingDirectory)
+            : await startAcp(session, workingDirectory);
+        session.link = link;
+        return link;
+    }
+
+    async function startAcp(session: LiveSession, workingDirectory: string): Promise<AgentLink> {
         const connection = new AcpConnection(session.agent.command, session.agent.args, workingDirectory, {
             notification: (method, params) => {
                 if (method === 'session/update') {
-                    appendUpdate(session, params);
+                    appendAcpUpdate(session, params);
                 }
             },
             request: async (method, params) => requestFromAgent(method, params),
-            exit: reason => {
-                connection.dispose();
-                session.connection = undefined;
-                session.client = undefined;
-                session.sessionId = undefined;
-                session.status = 'error';
-                session.error = reason;
-                pushEntry(session, { role: 'system', text: reason });
-            }
+            exit: reason => handleExit(session, reason)
         });
-        session.connection = connection;
-
         const client = new AcpClient(connection);
         const initialized = await client.initialize();
         if (initialized.authMethods && initialized.authMethods.length > 0) {
             const methods = initialized.authMethods.map(method => method.name ?? method.id).join(', ');
+            connection.dispose();
             throw new Error(
                 `"${session.agent.name}" requires authentication (${methods}). `
                 + 'Log in with that agent CLI first, then reopen this panel.'
             );
         }
-        session.sessionId = await client.newSession(workingDirectory);
-        session.client = client;
+        const sessionId = await client.newSession(workingDirectory);
+        return {
+            get alive() {
+                return connection.alive;
+            },
+            prompt: async text => {
+                await client.prompt(sessionId, text);
+            },
+            cancel: () => client.cancel(sessionId),
+            dispose: () => connection.dispose()
+        };
+    }
+
+    async function startPi(session: LiveSession, workingDirectory: string): Promise<AgentLink> {
+        const connection = new PiRpcConnection(session.agent.command, session.agent.args, workingDirectory, {
+            event: record => appendPiEvent(session, record),
+            uiRequest: record => answerPiUiRequest(session, connection, record),
+            exit: reason => handleExit(session, reason)
+        });
+        try {
+            await connection.start();
+        } catch (error) {
+            connection.dispose();
+            throw error;
+        }
+        return {
+            get alive() {
+                return connection.alive;
+            },
+            prompt: async text => {
+                await connection.prompt(text);
+            },
+            cancel: () => connection.abort(),
+            dispose: () => connection.dispose()
+        };
+    }
+
+    function handleExit(session: LiveSession, reason: string): void {
+        session.link?.dispose();
+        session.link = undefined;
+        session.status = 'error';
+        session.error = reason;
+        pushEntry(session, { role: 'system', text: reason });
     }
 }
 
-/** Rewrites `session/update` notifications into transcript entries. */
-function appendUpdate(session: LiveSession, params: Record<string, unknown>): void {
+/** Rewrites ACP `session/update` notifications into transcript entries. */
+function appendAcpUpdate(session: LiveSession, params: Record<string, unknown>): void {
     const update = params.update as Record<string, unknown> | undefined;
     if (!update || typeof update.sessionUpdate !== 'string') {
         return;
@@ -182,13 +255,7 @@ function appendUpdate(session: LiveSession, params: Record<string, unknown>): vo
             pushEntry(session, { role: 'system', text: `thought: ${text}` });
             return;
         }
-        const last = session.entries[session.entries.length - 1];
-        if (last && last.role === 'agent' && !last.text.endsWith('\n\n')) {
-            // Streamed chunks form one message; append instead of adding rows.
-            session.entries[session.entries.length - 1] = { role: 'agent', text: last.text + text };
-            return;
-        }
-        pushEntry(session, { role: 'agent', text });
+        appendAgentText(session, text);
         return;
     }
 
@@ -208,6 +275,96 @@ function appendUpdate(session: LiveSession, params: Record<string, unknown>): vo
     }
 }
 
+/**
+ * Rewrites Pi RPC session events into the same transcript entries.
+ *
+ * Only assistant text, tool activity and turn boundaries are surfaced: Pi also
+ * streams system, user and extension ("custom") messages, which would duplicate
+ * what the panel already shows or expose internal prompt assembly.
+ */
+function appendPiEvent(session: LiveSession, record: Record<string, unknown>): void {
+    const type = typeof record.type === 'string' ? record.type : undefined;
+
+    if (type === 'message_update') {
+        const event = record.assistantMessageEvent as Record<string, unknown> | undefined;
+        const kind = typeof event?.type === 'string' ? event.type : undefined;
+        if (kind === 'text_delta' && typeof event?.delta === 'string') {
+            appendAgentText(session, event.delta);
+            return;
+        }
+        if (kind === 'error' && typeof event?.error === 'string') {
+            pushEntry(session, { role: 'system', text: `agent error: ${event.error}` });
+        }
+        return;
+    }
+
+    if (type === 'tool_execution_start') {
+        const name = typeof record.toolName === 'string' ? record.toolName : 'tool';
+        pushEntry(session, { role: 'tool', text: `tool: ${name}` });
+        return;
+    }
+
+    if (type === 'tool_execution_end') {
+        if (record.isError === true) {
+            const name = typeof record.toolName === 'string' ? record.toolName : 'tool';
+            pushEntry(session, { role: 'tool', text: `tool: ${name} failed` });
+        }
+        return;
+    }
+
+    if (type === 'agent_settled') {
+        if (record.aborted === true) {
+            pushEntry(session, { role: 'system', text: 'Turn aborted.' });
+        }
+        session.status = 'idle';
+        session.error = undefined;
+        session.streamingText = false;
+    }
+}
+
+/**
+ * Answers Pi extension UI requests.
+ *
+ * Fire-and-forget methods (`setStatus`, `notify`, …) are ignored except for
+ * notifications, which go into the transcript. Dialog methods block Pi until
+ * answered, and this panel has no dialog UI yet, so they are cancelled — and
+ * recorded, so nothing happens silently.
+ */
+function answerPiUiRequest(
+    session: LiveSession,
+    connection: PiRpcConnection,
+    record: Record<string, unknown>
+): void {
+    const id = typeof record.id === 'string' ? record.id : undefined;
+    const method = typeof record.method === 'string' ? record.method : undefined;
+    if (!id || !method) {
+        return;
+    }
+    if (method === 'notify') {
+        const message = typeof record.message === 'string' ? record.message : undefined;
+        if (message) {
+            pushEntry(session, { role: 'system', text: `agent notice: ${message}` });
+        }
+        return;
+    }
+    if (method === 'select' || method === 'confirm' || method === 'input' || method === 'editor') {
+        const title = typeof record.title === 'string' ? record.title : method;
+        pushEntry(session, { role: 'system', text: `agent asked: ${title} — dismissed (no dialog UI yet)` });
+        connection.answerUiRequest(id, { cancelled: true });
+    }
+}
+
+/** Streams text into the trailing agent entry, or starts a new one. */
+function appendAgentText(session: LiveSession, text: string): void {
+    const last = session.entries[session.entries.length - 1];
+    if (last && last.role === 'agent' && session.streamingText) {
+        session.entries[session.entries.length - 1] = { role: 'agent', text: last.text + text };
+        return;
+    }
+    pushEntry(session, { role: 'agent', text });
+    session.streamingText = true;
+}
+
 function contentText(content: unknown): string | undefined {
     if (typeof content !== 'object' || content === null) {
         return undefined;
@@ -217,7 +374,7 @@ function contentText(content: unknown): string | undefined {
 }
 
 /**
- * Answers requests the agent makes back to us.
+ * Answers requests an ACP agent makes back to us.
  *
  * This client advertises no filesystem or terminal capability, so those fail
  * loudly. Permission prompts are auto-approved for the least invasive allow
@@ -255,8 +412,9 @@ function requireSession(sessions: Map<string, LiveSession>, agentId: string): Li
 }
 
 /**
- * Agents come from `BRUCEDE_ACP_AGENTS` (authoritative) or the known list.
- * The environment variable is a JSON array of `{ id, name, command, args? }`.
+ * Agents come from `BRUCEDE_AGENTS` (authoritative; `BRUCEDE_ACP_AGENTS` is
+ * still accepted as its old name) or the known list.
+ * The environment variable is a JSON array of `{ id, name, command, args?, protocol? }`.
  */
 function discoverAgents(): AgentDescriptor[] {
     const configured = readConfiguredAgents();
@@ -264,14 +422,15 @@ function discoverAgents(): AgentDescriptor[] {
     return candidates.map(candidate => ({
         id: candidate.id,
         name: candidate.name,
+        protocol: candidate.protocol,
         command: candidate.command,
         args: candidate.args ?? [],
         available: executableExists(candidate.command)
     }));
 }
 
-function readConfiguredAgents(): Omit<AgentDescriptor, 'available'>[] | undefined {
-    const raw = process.env.BRUCEDE_ACP_AGENTS;
+function readConfiguredAgents(): AgentCandidate[] | undefined {
+    const raw = process.env.BRUCEDE_AGENTS ?? process.env.BRUCEDE_ACP_AGENTS;
     if (!raw || !raw.trim()) {
         return undefined;
     }
@@ -280,7 +439,7 @@ function readConfiguredAgents(): Omit<AgentDescriptor, 'available'>[] | undefine
         if (!Array.isArray(parsed)) {
             return undefined;
         }
-        const agents: Omit<AgentDescriptor, 'available'>[] = [];
+        const agents: AgentCandidate[] = [];
         for (const entry of parsed) {
             if (typeof entry !== 'object' || entry === null) {
                 continue;
@@ -296,6 +455,7 @@ function readConfiguredAgents(): Omit<AgentDescriptor, 'available'>[] | undefine
             agents.push({
                 id: typeof record.id === 'string' ? record.id : command,
                 name: typeof record.name === 'string' ? record.name : command,
+                protocol: isProtocol(record.protocol) ? record.protocol : 'acp',
                 command,
                 args
             });
@@ -306,24 +466,8 @@ function readConfiguredAgents(): Omit<AgentDescriptor, 'available'>[] | undefine
     }
 }
 
-/** True when `command` is an executable file on `PATH` (or an absolute path). */
-function executableExists(command: string): boolean {
-    const candidates = command.includes('/')
-        ? [command]
-        : (process.env.PATH ?? '').split(delimiter).filter(Boolean).map(directory => join(directory, command));
-    for (const candidate of candidates) {
-        try {
-            const stats = statSync(candidate);
-            if (!stats.isFile()) {
-                continue;
-            }
-            accessSync(candidate, constants.X_OK);
-            return true;
-        } catch {
-            // Keep probing the remaining PATH entries.
-        }
-    }
-    return false;
+function isProtocol(value: unknown): value is AgentProtocol {
+    return value === 'acp' || value === 'pi-rpc';
 }
 
 function describeError(error: unknown): string {

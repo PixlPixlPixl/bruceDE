@@ -90,11 +90,24 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
 - **Git** (`bruce.git`) — backend half runs `git status --porcelain=v2` in the
   user's work tree and provides `git.repository`; the panel reads it through
   `api.services.remote` and republishes `git/changes-updated` in the renderer.
-- **Agent Chat** (`bruce.agent-chat`) — backend half speaks ACP (Agent Client
-  Protocol, JSON-RPC over stdio) to an installed agent CLI and provides
-  `agent.sessions`. Agents come from `BRUCEDE_ACP_AGENTS` (JSON array of
-  `{ id, name, command, args }`) or a small known-CLI list; the panel polls the
+- **Agent Chat** (`bruce.agent-chat`) — backend half drives an installed agent
+  CLI and provides `agent.sessions`. Two wire protocols are supported, because
+  the ecosystem is not uniform:
+  - `acp` — the Agent Client Protocol (JSON-RPC over stdio), used by Gemini CLI,
+    Claude Code and other ACP agents;
+  - `pi-rpc` — Pi's own JSONL command/event protocol (`pi --mode rpc
+    --no-session`); Pi has no ACP mode.
+
+  Agents come from `BRUCEDE_AGENTS` (JSON array of
+  `{ id, name, protocol?, command, args? }`, `protocol` defaults to `acp`;
+  `BRUCEDE_ACP_AGENTS` is still accepted under its old name) or a known list
+  containing Pi, Gemini CLI, Claude Code (ACP) and OpenCode. The panel polls the
   service because the host cannot push backend events across the RPC boundary.
+
+  Agent executables are resolved to a real path first: npm shims on Windows are
+  `.cmd` files that cannot be passed to `CreateProcess`, so they are launched
+  through the command processor explicitly while POSIX agents are spawned
+  directly.
 - **Terminal** (`bruce.terminal`) — adopts the host's `brucede.terminal`
   capability through `api.panels.registerHostPanel`, so the widget is created,
   rendered, persisted and disposed by the host's own terminal code. The plugin

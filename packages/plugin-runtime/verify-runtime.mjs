@@ -366,6 +366,49 @@ for (const app of ['electron-app', 'browser-app']) {
     );
 }
 
+console.log('agent chat protocols');
+const agentChatBackend = await readSource('plugins/agent-chat/src/backend/index.ts');
+const agentChatShared = await readSource('plugins/agent-chat/src/shared.ts');
+check(
+    'the agent contract names both wire protocols',
+    agentChatShared.includes("export type AgentProtocol = 'acp' | 'pi-rpc'")
+        && agentChatShared.includes('readonly protocol: AgentProtocol'),
+    'AgentDescriptor carries no protocol'
+);
+check(
+    'Pi is offered through its own RPC mode',
+    agentChatBackend.includes("protocol: 'pi-rpc'")
+        && agentChatBackend.includes("'--mode', 'rpc'"),
+    'Pi is not configured to run in RPC mode'
+);
+check(
+    'every known agent declares a protocol',
+    (agentChatBackend.match(/\{ id: '[^']+', name: '[^']+', protocol: '(acp|pi-rpc)'/g) ?? []).length >= 4,
+    'a known agent is missing its protocol'
+);
+const piRpcSource = await readSource('plugins/agent-chat/src/pi-rpc.ts');
+check(
+    'the Pi RPC client implements handshake, prompt and abort',
+    ['get_state', 'type: \'prompt\'', 'type: \'abort\''].every(token => piRpcSource.includes(token)),
+    'the Pi client is missing a protocol command'
+);
+const spawnSource = await readSource('plugins/agent-chat/src/spawn.ts');
+check(
+    'agents are spawned without a generic shell on POSIX',
+    spawnSource.includes('resolveExecutable') && !spawnSource.includes('shell: true'),
+    'agent spawning relies on a generic shell layer'
+);
+check(
+    'Windows npm shims are handled explicitly',
+    /\.(cmd|bat)$/.test('pi.cmd') && /\.(cmd|bat)/.test(spawnSource) && spawnSource.includes('ComSpec'),
+    'a .cmd agent shim would fail with ENOENT on Windows'
+);
+check(
+    'both protocols share one session bookkeeping path',
+    agentChatBackend.includes('interface AgentLink') && agentChatBackend.includes('ensureStarted'),
+    'the session logic is duplicated per protocol'
+);
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);
 

@@ -1,9 +1,19 @@
 /** Wire types shared by the agent-chat plugin's renderer and backend halves. */
 
-/** One agent executable the backend can speak ACP to. */
+/**
+ * Wire protocol the backend speaks to an agent CLI.
+ *
+ * `acp` is the Agent Client Protocol (JSON-RPC over stdio), spoken by Gemini CLI,
+ * Claude Code and others. `pi-rpc` is Pi's own JSONL command/event protocol
+ * (`pi --mode rpc`); Pi does not implement ACP.
+ */
+export type AgentProtocol = 'acp' | 'pi-rpc';
+
+/** One agent executable the backend can control. */
 export interface AgentDescriptor {
     readonly id: string;
     readonly name: string;
+    readonly protocol: AgentProtocol;
     readonly command: string;
     readonly args: readonly string[];
     /** False when the executable is not on `PATH`; shown as unavailable. */

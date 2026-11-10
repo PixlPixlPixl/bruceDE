@@ -38,6 +38,11 @@ export function activate(api: FrontendPluginAPI): void {
     });
 }
 
+/** Human name of the wire protocol, shown in the agent picker tooltip. */
+function protocolLabel(protocol: AgentDescriptor['protocol']): string {
+    return protocol === 'pi-rpc' ? 'Pi RPC' : 'ACP';
+}
+
 interface AgentChatProps {
     readonly React: PanelHostTools['React'];
     readonly sessions: AgentSessionsService;
@@ -172,8 +177,8 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
                             key: agent.id,
                             type: 'button',
                             title: agent.available
-                                ? `${agent.command} ${agent.args.join(' ')}`
-                                : `${agent.command} was not found on PATH`,
+                                ? `${agent.command} ${agent.args.join(' ')} · ${protocolLabel(agent.protocol)}`
+                                : `${agent.command} was not found on PATH (${protocolLabel(agent.protocol)})`,
                             style: {
                                 ...BUTTON_STYLE,
                                 opacity: agent.available ? 1 : 0.45,
