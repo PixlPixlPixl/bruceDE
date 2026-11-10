@@ -5,9 +5,22 @@ BruceDE is a plugin-first Theia desktop workspace. The initial workspace is an e
 ## Development
 
 ```bash
-npm ci
-npm run build:electron      # builds plugin API/runtime, workspace-core, plugin bundles, then the app
+npm ci                      # also compiles @brucede/plugin-api, @brucede/plugin-runtime and workspace-core
+npm run build:electron      # plugin bundles, then the app
 npm run start:electron
+```
+
+`npm ci`/`npm install` runs the root `postinstall`, which compiles the local
+packages in order (`@brucede/plugin-api` → `@brucede/plugin-runtime` →
+`workspace-core`). They are workspace packages, not published to npm, so their
+`lib/` output is not committed; without that step TypeScript cannot resolve
+`@brucede/*` and reports `TS2307: Cannot find module '@brucede/plugin-api' or its
+corresponding type declarations`.
+
+If you installed with `--ignore-scripts`, build them once by hand:
+
+```bash
+npm run build:workspace-core
 ```
 
 The application is pinned to Theia 1.77.0. Cordis is the native-plugin lifecycle engine. Plugins are trusted code, not sandboxed: read [AGENTS.md](./AGENTS.md) before developing or installing plugins.

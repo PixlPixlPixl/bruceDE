@@ -80,11 +80,17 @@ Validation is strict and runs before any code is imported:
 ## Build and run
 
 ```bash
+npm ci                       # compiles @brucede/* and workspace-core (root postinstall)
 node packages/plugin-build/build.mjs plugins/<plugin-id>   # one plugin
 npm run build:plugins                                      # every plugin
 npm run build:electron                                     # full app
 npm run start:electron
 ```
+
+The `@brucede/*` contracts are workspace packages, not published to npm. Their
+`lib/` output is not committed, so any TypeScript run needs the compiled
+types first: `npm run build:workspace-core` if you installed with
+`--ignore-scripts`.
 
 Inside a plugin, `npm run build` should be
 `node ../../packages/plugin-build/build.mjs .`.

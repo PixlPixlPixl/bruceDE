@@ -8,10 +8,25 @@
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
+
+// Fail with an actionable message instead of a bare ERR_MODULE_NOT_FOUND: the
+// local packages are compiled on install (root postinstall), so a checkout
+// installed with --ignore-scripts lands here without any lib/ output.
+const compiled = [
+    'packages/plugin-api/lib/index.js',
+    'packages/plugin-runtime/lib/index.js',
+    'workspace-core/lib/node/plugin-discovery.js'
+];
+const missing = compiled.filter(relative => !fsSync.existsSync(path.join(root, relative)));
+if (missing.length > 0) {
+    console.error(`Cannot run verification: not built yet.\nMissing: ${missing.join(', ')}\nRun: npm run build:workspace-core`);
+    process.exit(1);
+}
 
 const { validatePluginManifest, PluginManifestError, satisfiesVersion, CordisPluginManager } = await import(
     './lib/index.js'
