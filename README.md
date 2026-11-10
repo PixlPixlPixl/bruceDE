@@ -10,19 +10,23 @@ npm run build:electron      # plugin bundles, then the app
 npm run start:electron
 ```
 
-The browser target binds `127.0.0.1:3000` by default. Arguments after `--` reach
-the launcher, so it can be exposed on another interface or port:
+The browser target listens on `127.0.0.1:3000` by default. The start scripts end
+with `--`, so everything after `npm run start:browser --` reaches Theia's own
+`start` command unchanged:
 
 ```bash
-npm run start:browser                                  # http://localhost:3000
-npm run start:browser -- --port 8080                   # http://localhost:8080
-npm run start:browser -- --host 0.0.0.0 --port 8080    # reachable from the network
+npm run start:browser                                    # http://localhost:3000
+npm run start:browser -- --port 8080                     # http://localhost:8080
+npm run start:browser -- --hostname 0.0.0.0 --port 8080  # every interface
+npm run start:browser -- --hostname 192.168.1.20         # one interface
 ```
 
-`--host` is accepted here and mapped to Theia's `--hostname` (which is what
-actually sets the bind address); `--port` is passed through. Any other option is
-forwarded unchanged to `theia start` (`--ssl`, `--log-level`, …), and the
-electron target accepts the same flags (`npm run start:electron -- --port 3001`).
+`--hostname` is Theia's flag for the listen address (its help text calls it "the
+allowed hostname for connections", but it is passed straight to
+`server.listen(port, hostname)`). There is no `--host`: an unknown flag is ignored
+by Theia, so `--host 0.0.0.0` leaves the server on `localhost` and nothing outside
+the machine can connect. The electron target forwards the same arguments
+(`npm run start:electron -- --port 3001`).
 
 `npm ci`/`npm install` runs the root `postinstall`, which compiles the local
 packages in order (`@brucede/plugin-api` → `@brucede/plugin-runtime` →

@@ -498,21 +498,16 @@ console.log('install and build scripts avoid Windows shims');
         shimCalls.length === 0,
         shimCalls.join(', ')
     );
-    const launcherSource = await readSource('scripts/start.mjs');
+    // `npm run start:browser -- --hostname 0.0.0.0` only reaches Theia when the
+    // delegating script ends with `--`; otherwise npm parses those flags itself and
+    // Theia silently keeps its default bind address.
+    const rootScripts = (await readJsonSource('package.json')).scripts ?? {};
+    const startNames = Object.keys(rootScripts).filter(name => name.startsWith('start'));
+    const missingForwarding = startNames.filter(name => !rootScripts[name].trim().endsWith('--'));
     check(
-        'the launcher accepts --host and --port',
-        launcherSource.includes("'--host'") && launcherSource.includes("'--port'"),
-        'start:browser cannot be pointed at another interface'
-    );
-    check(
-        'the launcher maps --host onto the flag theia honours',
-        launcherSource.includes('--hostname'),
-        'Theia would ignore the requested bind address'
-    );
-    check(
-        'the launcher validates the port range',
-        launcherSource.includes('parsed > 65535'),
-        'an invalid port would reach the backend'
+        'the root start scripts forward arguments to Theia',
+        startNames.length > 0 && missingForwarding.length === 0,
+        missingForwarding.join(', ') || 'no start script found'
     );
     const rootManifest = await readJsonSource('package.json');
     check(
