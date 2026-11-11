@@ -622,13 +622,15 @@ check(
     'the + glyph would sit off centre in its box'
 );
 {
-    // Keep the accessible name, drop the visible word: after removing the
-    // aria-label the string 'Refresh' may only appear in the tooltip text.
-    const withoutAria = fileBrowserFrontend.replace(/'aria-label': 'Refresh'/, '');
+    // Keep the accessible name, drop the visible word: the string 'Refresh' may
+    // only appear as the button's label/title, never as rendered text.
+    const withoutLabels = fileBrowserFrontend
+        .replace(/'aria-label': 'Refresh'/, '')
+        .replace(/'Refresh', 'Re-read this folder'/, '');
     check(
         'the file browser refreshes through an icon button, not a text button',
-        fileBrowserFrontend.includes("'codicon codicon-refresh'") && fileBrowserFrontend.includes("'aria-label': 'Refresh'")
-            && !withoutAria.includes("'Refresh'"),
+        fileBrowserFrontend.includes("codicon-${icon}") && fileBrowserFrontend.includes("'refresh'")
+            && !withoutLabels.includes("'Refresh'"),
         'the header still carries a wordy refresh button'
     );
 }
@@ -718,8 +720,46 @@ check(
 );
 check(
     'the git panel uses the shared row gutter',
-    gitFrontend.includes("padding: '3px 14px'") && gitFrontend.includes("padding: '10px 14px 4px'"),
+    gitFrontend.includes("padding: '3px 10px'") && gitFrontend.includes("padding: '8px 10px 4px'"),
     'rows and section headings would not line up with the header'
+);
+check(
+    'every plugin header uses the same box, so the separators line up',
+    agentChatFrontend.includes("padding: '6px 10px'")
+        && fileBrowserFrontend.includes("padding: '6px 10px'")
+        && gitFrontend.includes("padding: '6px 10px'"),
+    'one panel header would be taller than its neighbours'
+);
+
+console.log('file browser navigation');
+const fileBrowserBackend = await readSource('plugins/file-browser/src/backend/index.ts');
+check(
+    'the file browser starts in the home folder',
+    fileBrowserBackend.includes('homedir()') && fileBrowserBackend.includes('roots: [homedir()]'),
+    'it would open in the launch directory instead of the user\'s home'
+);
+check(
+    'the file browser offers back, forward and up',
+    ['arrow-left', 'arrow-right', 'arrow-up'].every(icon => fileBrowserFrontend.includes(`iconButton('${icon}'`))
+        && fileBrowserFrontend.includes('codicon-${icon}'),
+    'there would be no way to navigate between folders'
+);
+check(
+    'navigation keeps a history instead of re-listing folders',
+    fileBrowserFrontend.includes('interface Navigation')
+        && fileBrowserFrontend.includes('previous.entries.slice(0, previous.cursor + 1)'),
+    'back and forward would have no history to move through'
+);
+check(
+    'the up button climbs one folder and stops at the root',
+    fileBrowserFrontend.includes('export function parentPath')
+        && fileBrowserFrontend.includes('trimmed.length === 1 ? undefined : separator'),
+    'a top-level folder like /home would be treated as the root'
+);
+check(
+    'the current folder is shown with the home prefix shortened',
+    fileBrowserFrontend.includes('function displayPath') && fileBrowserFrontend.includes("return '~'"),
+    'a deep path would overflow the header'
 );
 
 console.log('install and build scripts avoid Windows shims');

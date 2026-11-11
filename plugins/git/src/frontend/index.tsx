@@ -311,7 +311,9 @@ const HEADER_STYLE: ReactNS.CSSProperties = {
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: '8px',
-    padding: '10px 14px',
+    // Same header box as the File Browser and Agent Chat (6px + a 22px control),
+    // so the separator line matches when the panels are side by side.
+    padding: '6px 10px',
     borderBottom: '1px solid var(--theia-panel-border)'
 };
 
@@ -371,7 +373,7 @@ const SECTION_STYLE: ReactNS.CSSProperties = {
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: '8px',
-    padding: '10px 14px 4px',
+    padding: '8px 10px 4px',
     color: 'var(--theia-descriptionForeground)',
     fontSize: '10px',
     letterSpacing: '0.06em',
@@ -396,7 +398,7 @@ const ROW_STYLE: ReactNS.CSSProperties = {
     alignItems: 'center',
     gap: '8px',
     width: '100%',
-    padding: '3px 14px',
+    padding: '3px 10px',
     background: 'transparent',
     border: 'none',
     color: 'inherit',
@@ -434,7 +436,7 @@ const DELETED_STYLE: ReactNS.CSSProperties = {
 };
 
 const MESSAGE_STYLE: ReactNS.CSSProperties = {
-    padding: '10px 14px',
+    padding: '10px 10px',
     color: 'var(--theia-descriptionForeground)',
     whiteSpace: 'pre-wrap'
 };

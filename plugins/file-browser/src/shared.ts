@@ -1,8 +1,10 @@
 /** Wire types shared by the file browser's renderer and backend halves. */
 
-/** Absolute paths the browser may start from. */
+/** Where the browser starts and where the application runs. */
 export interface FileRoots {
+    /** Working directory of the backend process (where the app was launched). */
     readonly cwd: string;
+    /** Starting directory for the browser: the user's home folder. */
     readonly roots: readonly string[];
 }
 

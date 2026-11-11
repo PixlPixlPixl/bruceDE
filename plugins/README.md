@@ -83,12 +83,14 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
 
 ## Current plugins
 
-- **File Browser** (`bruce.file-browser`) — directory tree over the host's
+- **File Browser** (`bruce.file-browser`) — folder listing over the host's
   `workspace.resources` service, publishes selections through
-  `workspace.selection`. Its backend half provides `files.roots` so the renderer
-  can learn the process working directory. The header carries an icon-only
-  Refresh button (`codicon codicon-refresh`, `aria-label="Refresh"`), not a
-  text button.
+  `workspace.selection`. Its backend half provides `files.roots`, which starts at
+  the user's home folder (`~`) rather than the directory the app was launched
+  from. The header has back/forward/up buttons over a navigation history, shows
+  the current folder with the home prefix shortened to `~`, and carry icon-only
+  Refresh (`codicon codicon-refresh`, `aria-label="Refresh"`) instead of text.
+  Clicking a folder descends into it; clicking a file selects it.
 - **Git** (`bruce.git`) — backend half runs `git status --porcelain=v2` and
   `git diff HEAD --numstat -z` in the user's work tree and provides
   `git.repository`; the panel reads it through `api.services.remote` and
@@ -98,6 +100,8 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   conflicted, untracked — using the `--theia-gitDecoration-*` tokens with
   fallbacks, because this build ships no Git extension to define them.
   Untracked and binary files show no counts rather than a fabricated zero.
+  The header box is the same `6px 10px` as the other plugin panels, so the
+  separator line matches when the panels sit side by side.
 - **Agent Chat** (`bruce.agent-chat`) — backend half drives an installed agent
   CLI and provides `agent.sessions`. Two wire protocols are supported, because
   the ecosystem is not uniform:
