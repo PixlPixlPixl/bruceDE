@@ -756,8 +756,12 @@ ${bold('How it works')}
 
 ${bold('Targets')}
   browser    http://127.0.0.1:3000 by default; forwarded arguments reach
-             \`theia start\` unchanged (for example --port 8080).
+             \`theia start\` unchanged (for example --port 8080, or
+             --hostname 0.0.0.0 to listen on every interface).
   electron   native desktop window; forwarded arguments reach \`theia start\`.
+
+  Listening beyond localhost exposes the app, unauthenticated, to anything
+  that can reach the port. Prefer a Tailnet or firewall-protected address.
 
 ${bold('Uninstall')}
   Removes node_modules, the build outputs and the install state. The source

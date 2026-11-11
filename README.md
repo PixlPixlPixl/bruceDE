@@ -56,6 +56,12 @@ allowed hostname for connections", but it is passed straight to
 by Theia, so `--host 0.0.0.0` leaves the server on `localhost` and nothing outside
 the machine can connect. The electron target forwards the same arguments.
 
+A listening address other than `localhost` exposes the app to whatever network
+can reach the port, and it has no authentication: anyone who connects gets the
+files, terminals and agent sessions of the account that started it. Bind to a
+Tailnet address (`--hostname 100.x.y.z`, or `0.0.0.0` behind a firewall) rather
+than to a public interface, and stop the server when you are done.
+
 ### Direct npm use
 
 The scripts wrap these commands, which still work on their own (for example in
