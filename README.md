@@ -143,7 +143,7 @@ See [plugins/README.md](./plugins/README.md). Each plugin folder has a `plugin.j
 - `packages/plugin-build/`: esbuild bundler for plugin entrypoints.
 - `packages/ui-kit/`: optional shared visual tokens/primitives.
 - `scripts/`: `icebox.mjs` (install/update/uninstall/start logic) and the ffmpeg addon repair step.
-- `plugins/`: self-contained feature plugin packages (terminal, agent-chat, file-browser, Git).
+- `plugins/`: self-contained feature plugin packages (terminal, agent-chat, projects, file-browser, Git).
 - `electron-app/` and `browser-app/`: Theia application targets.
 
 See [AGENTS.md](./AGENTS.md) for the product goal, native trust model, plugin loading flow, communication rules, and implementation direction.

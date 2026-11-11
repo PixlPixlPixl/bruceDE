@@ -1,5 +1,7 @@
 import type * as ReactNS from 'react';
 import type {
+    AgentChatLauncherService,
+    AgentSessionHandle,
     FrontendPluginAPI,
     PanelHostTools,
     PanelState,
@@ -43,6 +45,24 @@ export function activate(api: FrontendPluginAPI): void {
     const sessions = api.services.remote<AgentSessionsService>(WORKSPACE_SERVICE_IDS.agentSessions);
     const resources = api.services.get<WorkspaceResourcesService>(WORKSPACE_SERVICE_IDS.resources);
 
+    // Panel ids are namespaced per plugin, so another plugin (Projects) cannot
+    // open this chat through `panels.open`. It uses this launcher instead, which
+    // stays owned by agent-chat and keeps the panel under this plugin's disposal.
+    api.services.provide<AgentChatLauncherService>(WORKSPACE_SERVICE_IDS.agentChat, {
+        openChat: options => {
+            // Panel state is persisted with the layout, so it must be plain JSON:
+            // absent fields are omitted rather than stored as `undefined`.
+            const state: PanelState = {
+                agentId: options.agentId,
+                ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+                ...(options.sessionId === undefined ? {} : { sessionId: options.sessionId }),
+                ...(options.resume === undefined ? {} : { resume: options.resume }),
+                ...(options.title === undefined ? {} : { title: options.title })
+            };
+            return api.panels.open(PANEL_CHAT, { state });
+        }
+    });
+
     api.panels.register({
         id: PANEL_CHAT,
         title: 'Agent Chat',
@@ -55,7 +75,11 @@ export function activate(api: FrontendPluginAPI): void {
                     resources,
                     api,
                     instanceId,
+                    initialSessionId: state?.sessionId,
                     initialAgentId: state?.agentId,
+                    initialCwd: state?.cwd,
+                    initialResume: state?.resume,
+                    initialTitle: state?.title,
                     onAgentBound: (name: string) => {
                         if (widget) {
                             widget.title.label = name;
@@ -65,15 +89,16 @@ export function activate(api: FrontendPluginAPI): void {
             );
             widget.id = instanceId;
             widget.title.closable = true;
-            widget.title.label = 'Agent Chat';
+            widget.title.label = typeof state?.title === 'string' ? state.title : 'Agent Chat';
             // The agent list lives in the backend, so the tab label is refined
-            // asynchronously; until then the panel keeps its generic name.
+            // asynchronously; until then the panel keeps its generic name. A
+            // caller-supplied title (a project session) wins over the agent name.
             const boundAgentId = state?.agentId;
-            if (typeof boundAgentId === 'string') {
+            if (typeof boundAgentId === 'string' && typeof state?.title !== 'string') {
                 void sessions.listAgents()
                     .then(list => {
                         const agent = list.find(candidate => candidate.id === boundAgentId);
-                        if (agent && widget) {
+                        if (agent && widget && widget.title.label === 'Agent Chat') {
                             widget.title.label = agent.name;
                         }
                     })
@@ -158,12 +183,36 @@ interface AgentChatProps {
     readonly api: FrontendPluginAPI;
     readonly instanceId: string;
     readonly initialAgentId?: unknown;
+    /** Logical backend session id; defaults to the panel instance id. */
+    readonly initialSessionId?: unknown;
+    /** Folder the agent runs in, for a chat opened by a project list. */
+    readonly initialCwd?: unknown;
+    /** Agent-side handle to continue an earlier conversation. */
+    readonly initialResume?: unknown;
+    readonly initialTitle?: unknown;
     readonly onAgentBound: (name: string) => void;
+}
+
+/** Accepts a handle read back from panel state, ignoring malformed data. */
+function isSessionHandle(value: unknown): value is AgentSessionHandle {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+    const record = value as Record<string, unknown>;
+    return typeof record.agentId === 'string'
+        && typeof record.sessionId === 'string'
+        && (record.protocol === 'acp' || record.protocol === 'pi-rpc');
 }
 
 /** One chat session: header with a new-chat picker, transcript, composer. */
 function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
-    const { React, sessions, api, instanceId, onAgentBound, resources } = props;
+    const { React, sessions, api, onAgentBound, resources } = props;
+    // The backend session id is the panel's own id unless a caller (Projects)
+    // supplied one, so a resumed conversation keeps the same session record even
+    // though the host chose a new panel instance id for the tab.
+    const sessionId = typeof props.initialSessionId === 'string' ? props.initialSessionId : props.instanceId;
+    const initialCwd = typeof props.initialCwd === 'string' ? props.initialCwd : undefined;
+    const initialResume = isSessionHandle(props.initialResume) ? props.initialResume : undefined;
     const [agents, setAgents] = React.useState<readonly AgentDescriptor[]>([]);
     const [agentId, setAgentId] = React.useState<string | undefined>(
         typeof props.initialAgentId === 'string' ? props.initialAgentId : undefined
@@ -211,7 +260,14 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
                 return;
             }
             try {
-                const next = await sessions.openSession(instanceId, agentId);
+                // The resume handle belongs to the agent it was recorded for; a
+                // later switch to another agent must start that agent fresh.
+                const resume = initialResume && initialResume.agentId === agentId ? initialResume : undefined;
+                const options = {
+                    ...(initialCwd === undefined ? {} : { cwd: initialCwd }),
+                    ...(resume === undefined ? {} : { resume })
+                };
+                const next = await sessions.openSession(sessionId, agentId, options);
                 if (!cancelled) {
                     setState(next);
                 }
@@ -224,12 +280,12 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
         return () => {
             cancelled = true;
         };
-    }, [agentId, instanceId, sessions]);
+    }, [agentId, initialCwd, initialResume, sessionId, sessions]);
 
     // The session holds a child process: release it when this panel disappears.
     React.useEffect(() => () => {
-        void sessions.release(instanceId).catch(() => undefined);
-    }, [instanceId, sessions]);
+        void sessions.release(sessionId).catch(() => undefined);
+    }, [sessionId, sessions]);
 
     // Poll the backend while the panel is mounted; there is no push channel.
     React.useEffect(() => {
@@ -239,7 +295,7 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
         let cancelled = false;
         const poll = async (): Promise<void> => {
             try {
-                const next = await sessions.state(instanceId);
+                const next = await sessions.state(sessionId);
                 if (!cancelled) {
                     setState(next);
                 }
@@ -255,7 +311,7 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
             cancelled = true;
             clearInterval(timer);
         };
-    }, [agentId, instanceId, sessions]);
+    }, [agentId, sessionId, sessions]);
 
     // Keep the newest entry in view.
     React.useEffect(() => {
@@ -325,11 +381,11 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
             if (!agentId) {
                 return;
             }
-            void sessions.searchModels(instanceId, query, MODEL_ROWS)
+            void sessions.searchModels(sessionId, query, MODEL_ROWS)
                 .then(rows => setModelRows(rows))
                 .catch(() => setModelRows([]));
         },
-        [agentId, instanceId, sessions]
+        [agentId, sessionId, sessions]
     );
 
     /**
@@ -349,14 +405,17 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
             onAgentBound(agent.name);
             return;
         }
-        const newState: PanelState = { agentId: agent.id };
-        void api.panels.open(PANEL_CHAT, { ref: instanceId, mode: 'tab-after', state: newState });
+        const newState: PanelState = {
+            agentId: agent.id,
+            ...(initialCwd === undefined ? {} : { cwd: initialCwd })
+        };
+        void api.panels.open(PANEL_CHAT, { ref: props.instanceId, mode: 'tab-after', state: newState });
     };
 
     const chooseModel = async (model: AgentModelInfo): Promise<void> => {
         setModelMenuOpen(false);
         try {
-            setState(await sessions.selectModel(instanceId, model.key));
+            setState(await sessions.selectModel(sessionId, model.key));
         } catch (cause) {
             setError(cause instanceof Error ? cause.message : String(cause));
         }
@@ -364,7 +423,7 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
 
     const chooseThinking = async (level: string): Promise<void> => {
         try {
-            setState(await sessions.selectThinking(instanceId, level));
+            setState(await sessions.selectThinking(sessionId, level));
         } catch (cause) {
             setError(cause instanceof Error ? cause.message : String(cause));
         }
@@ -482,9 +541,9 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
         setCompletion(undefined);
         try {
             if (text.startsWith('!')) {
-                setState(await sessions.runShell(instanceId, text.slice(1)));
+                setState(await sessions.runShell(sessionId, text.slice(1)));
             } else {
-                setState(await sessions.send(instanceId, text));
+                setState(await sessions.send(sessionId, text));
             }
             setInput('');
             setError(undefined);

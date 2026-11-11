@@ -76,14 +76,16 @@ export class PiRpcConnection {
     }
 
     /**
-     * Runs the handshake.
+     * Runs the handshake and returns the `get_state` payload.
      *
      * `get_state` doubles as the availability check: a CLI that never answers
      * (wrong binary, missing auth, crashed on startup) fails here instead of
-     * leaving the panel waiting on a prompt.
+     * leaving the panel waiting on a prompt. The payload also carries the
+     * session id and file a later resume needs.
      */
-    async start(): Promise<void> {
-        await this.command({ type: 'get_state' }, HANDSHAKE_TIMEOUT_MS);
+    async start(): Promise<Record<string, unknown> | undefined> {
+        const response = await this.command({ type: 'get_state' }, HANDSHAKE_TIMEOUT_MS);
+        return response.data as Record<string, unknown> | undefined;
     }
 
     /**

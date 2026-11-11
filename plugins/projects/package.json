@@ -1,0 +1,17 @@
+{
+    "name": "@icebox/plugin-projects",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "description": "Project folders with their stored, resumable agent sessions.",
+    "peerDependencies": {
+        "@icebox/plugin-api": "0.1.0",
+        "@icebox/ui-kit": "0.1.0"
+    },
+    "scripts": {
+        "build": "node ../../packages/plugin-build/build.mjs ."
+    },
+    "devDependencies": {
+        "@icebox/plugin-build": "0.1.0"
+    }
+}

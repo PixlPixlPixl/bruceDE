@@ -15,7 +15,7 @@ All plugins are **trusted native code**. Frontend modules run directly in the Th
 - `packages/plugin-api/`: Versioned, stable TypeScript contracts exposed to plugin authors. Keep Cordis and Theia implementation details behind this API where practical.
 - `packages/plugin-runtime/`: Cordis contexts/Fibers and the Cordis plugin loader. Frontend and backend both run Cordis core; a backend entrypoint is imported from disk with a dynamic `import()` of a validated `file://` URL, and `@icebox/plugin-runtime/loader` exposes the Cordis `Loader` for resolution work that needs it. Cordis owns activation, dependency ordering, service/event lifecycle, and disposal.
 - `packages/ui-kit/`: Optional shared CSS tokens and reusable UI primitives. It must not constrain plugin authors; custom React/TSX, CSS, SVG, canvas, and native Theia widgets are allowed.
-- `plugins/<plugin-id>/`: One self-contained folder/package per feature. Each owns its manifest, package metadata, frontend/backend source, assets, and built bundles. Initial feature folders: terminal, agent-chat, file-browser, and git. Agent instructions for creating one: [plugins/AGENTS.md](./plugins/AGENTS.md).
+- `plugins/<plugin-id>/`: One self-contained folder/package per feature. Each owns its manifest, package metadata, frontend/backend source, assets, and built bundles. Initial feature folders: terminal, agent-chat, projects, file-browser, and git. Agent instructions for creating one: [plugins/AGENTS.md](./plugins/AGENTS.md).
 
 ## Plugin package and loading flow
 
@@ -56,4 +56,4 @@ All plugins are **trusted native code**. Frontend modules run directly in the Th
 
 ## Direction
 
-Build in this order: stable manifest and API contracts; Cordis runtime and native ESM loading; panel ownership and deterministic disposal; typed service/event registry; settings and plugin manager with explicit trust warning; then real terminal, agent-chat, file-browser, and Git plugins. Persist user layouts independently of plugin installation. Keep the startup canvas empty unless the user explicitly restores a saved layout.
+Build in this order: stable manifest and API contracts; Cordis runtime and native ESM loading; panel ownership and deterministic disposal; typed service/event registry; settings and plugin manager with explicit trust warning; then real terminal, agent-chat, projects, file-browser, and Git plugins. Persist user layouts independently of plugin installation. Keep the startup canvas empty unless the user explicitly restores a saved layout.

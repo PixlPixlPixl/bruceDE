@@ -107,12 +107,22 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   the ecosystem is not uniform:
   - `acp` — the Agent Client Protocol (JSON-RPC over stdio), used by Gemini CLI,
     Claude Code and other ACP agents;
-  - `pi-rpc` — Pi's own JSONL command/event protocol (`pi --mode rpc
-    --no-session`); Pi has no ACP mode.
+  - `pi-rpc` — Pi's own JSONL command/event protocol (`pi --mode rpc`); Pi has
+    no ACP mode.
 
   Each chat tab is one session: the backend keys its process and transcript by
   the panel instance id, and the agent travels in the panel state, so restoring a
-  layout restores the tabs. The header has a `+` button instead of a permanent
+  layout restores the tabs. A caller that needs to address the session later
+  (Projects) can pass its own logical `sessionId` in the panel state instead.
+  Every session exposes its agent's native handle (`AgentState.resume`): Pi's
+  `sessionId`/`sessionFile` from `get_state`, ACP's `sessionId`. Passing that
+  handle back in `openSession(…, { resume })` continues the same agent-side
+  conversation through the agent's own mechanism — `--session <file>` for Pi,
+  `session/load` for ACP — and rebuilds the transcript from the agent
+  (`get_messages` for Pi, replayed `session/update` notifications for ACP), so a
+  resume does not start a new session or discard the provider's prompt cache.
+  A chat opened with a `cwd` persists its session so it can be resumed from any
+  directory; a plain chat keeps `--no-session` and stays ephemeral. The header has a `+` button instead of a permanent
   agent list: it opens a picker with installed agents on top (full colour,
   alphabetical) and the supported-but-missing ones below, dimmed and disabled.
   Choosing an agent opens a **sibling tab** next to the current chat
@@ -170,6 +180,18 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   `.cmd` files that cannot be passed to `CreateProcess`, so they are launched
   through the command processor explicitly while POSIX agents are spawned
   directly.
+- **Projects** (`icebox.projects`) — durable project folders with their agent
+  sessions. A project is a folder the user adds through the host's folder picker
+  (`workspace.dialogs`); `+` on a project starts a chat in that folder through
+  the agent-chat launcher service (`agent.chat`), so the chat stays owned by
+  agent-chat. Sessions are stored in `~/.icebox/projects.json` (or
+  `$ICEBOX_STATE_DIR/projects.json`) with the agent's native resume handle, and
+  are adopted automatically when a chat was opened in a project folder from
+  elsewhere. Resume reopens the same logical session id with that handle, which
+  is the agent's own resume path rather than a fresh session. Projects and
+  sessions can be archived (kept, out of the way) or deleted; deleting a live
+  session releases its agent. The panel polls `projects.refresh()` since the host
+  has no renderer push channel.
 - **Terminal** (`icebox.terminal`) — adopts the host's `icebox.terminal`
   capability through `api.panels.registerHostPanel`, so the widget is created,
   rendered, persisted and disposed by the host's own terminal code. The plugin

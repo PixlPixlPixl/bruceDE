@@ -25,10 +25,18 @@ export const WORKSPACE_SERVICE_IDS = {
     resources: 'workspace.resources',
     /** {@link WorkspaceSelectionService}: the user's current workspace selection. */
     selection: 'workspace.selection',
+    /** {@link WorkspaceDialogsService}: native host dialogs a plugin may request. */
+    dialogs: 'workspace.dialogs',
     /** Repository state provided by the Git plugin. */
     gitRepository: 'git.repository',
     /** Agent sessions provided by the agent-chat plugin. */
-    agentSessions: 'agent.sessions'
+    agentSessions: 'agent.sessions',
+    /**
+     * {@link AgentChatLauncherService}, provided by the agent-chat plugin on the
+     * renderer side. Other plugins use it to open a chat they do not own; panel
+     * ids are namespaced per plugin, so {@link PanelRegistryAPI.open} cannot.
+     */
+    agentChat: 'agent.chat'
 } as const;
 
 /** Stable event names emitted through `api.events`. */
@@ -36,7 +44,13 @@ export const WORKSPACE_EVENT_IDS = {
     /** Payload: {@link ResourceSelection} or `undefined`. */
     selectionChanged: 'workspace/selection-changed',
     /** Payload: repository change set provided by the Git plugin. */
-    changesUpdated: 'git/changes-updated'
+    changesUpdated: 'git/changes-updated',
+    /**
+     * Payload: {@link AgentSessionChange}. Emitted by the agent-chat backend when
+     * a live session starts, binds its native handle, finishes a turn or is
+     * released, so a workspace plugin can persist its state without polling.
+     */
+    agentSessionChanged: 'agent/session-changed'
 } as const;
 
 /**
@@ -96,6 +110,118 @@ export interface WorkspaceSelectionService {
     get(): ResourceSelection | undefined;
     set(selection: ResourceSelection | undefined): void;
     onDidChange(listener: (selection: ResourceSelection | undefined) => void): PluginDisposer;
+}
+
+/**
+ * Native dialogs, provided by the host as
+ * {@link WORKSPACE_SERVICE_IDS.dialogs}.
+ *
+ * Plugins must not build their own OS-level pickers (or import Theia's file
+ * dialog): the host owns the modal, its parent window and its platform quirks.
+ */
+export interface WorkspaceDialogsService {
+    /**
+     * Shows the host's folder picker and resolves to an absolute filesystem path.
+     * Resolves `undefined` when the user cancels.
+     */
+    pickDirectory(options?: { readonly title?: string }): Promise<string | undefined>;
+}
+
+/** Wire protocol an agent CLI speaks (`acp` or Pi's own RPC mode). */
+export type AgentProtocol = 'acp' | 'pi-rpc';
+
+/** Liveness of one agent session. */
+export type AgentStatus = 'idle' | 'starting' | 'running' | 'error';
+
+/** One agent executable the agent-chat backend can control. */
+export interface AgentDescriptor {
+    readonly id: string;
+    readonly name: string;
+    readonly protocol: AgentProtocol;
+    readonly command: string;
+    readonly args: readonly string[];
+    /** False when the executable is not on `PATH`; shown as unavailable. */
+    readonly available: boolean;
+}
+
+/**
+ * The agent's own handle for a conversation, so it can be continued later.
+ *
+ * These values are opaque tokens owned by the agent CLI: a workspace plugin
+ * stores them verbatim and hands them back through
+ * {@link AgentSessionOptions.resume}. Resuming must go through the agent's
+ * native mechanism (`--session` for Pi, `session/load` for ACP) so its own
+ * context and prompt cache stay intact.
+ */
+export interface AgentSessionHandle {
+    readonly agentId: string;
+    readonly protocol: AgentProtocol;
+    /** The session id the agent itself uses. */
+    readonly sessionId: string;
+    /** Pi persists a session as a JSONL file; resuming by path works from any directory. */
+    readonly sessionFile?: string;
+}
+
+/** Extra binding options of the agent sessions service's session opening call. */
+export interface AgentSessionOptions {
+    /** Working directory the agent runs in; defaults to the workspace directory. */
+    readonly cwd?: string;
+    /** Native handle of an earlier conversation this session should continue. */
+    readonly resume?: AgentSessionHandle;
+}
+
+/**
+ * Cheap snapshot of one live agent session.
+ *
+ * Unlike a full transcript this is safe to poll, which is how a session list
+ * keeps status and titles current.
+ */
+export interface AgentSessionSummary {
+    readonly sessionId: string;
+    readonly agentId: string;
+    readonly status: AgentStatus;
+    /** False when the backend has no live session under this id. */
+    readonly live: boolean;
+    readonly cwd?: string;
+    /** First line of the first prompt, when the session has one. */
+    readonly title?: string;
+    readonly resume?: AgentSessionHandle;
+    /** ISO timestamp of the last observed change. */
+    readonly updatedAt?: string;
+}
+
+/** Payload of {@link WORKSPACE_EVENT_IDS.agentSessionChanged}. */
+export interface AgentSessionChange {
+    readonly sessionId: string;
+}
+
+/** Options for {@link AgentChatLauncherService.openChat}. */
+export interface AgentChatOpenOptions {
+    readonly agentId: string;
+    /** Folder the agent runs in; omitted means the workspace directory. */
+    readonly cwd?: string;
+    /**
+     * Logical session id used by the backend for this conversation.
+     *
+     * The panel instance id is chosen by the host, so a caller that wants to
+     * address the session later (a project list does) must supply its own id.
+     */
+    readonly sessionId?: string;
+    /** Native handle to continue an earlier conversation. */
+    readonly resume?: AgentSessionHandle;
+    /** Tab label; defaults to the agent name. */
+    readonly title?: string;
+}
+
+/**
+ * Renderer-side launcher of agent chat panels, provided by the agent-chat plugin
+ * as {@link WORKSPACE_SERVICE_IDS.agentChat}.
+ *
+ * Resolves with the new panel instance id. The chat keeps running when the
+ * calling plugin unloads: it is owned by agent-chat, not by the launcher.
+ */
+export interface AgentChatLauncherService {
+    openChat(options: AgentChatOpenOptions): Promise<string>;
 }
 
 export interface PluginManifestContributionPanels {

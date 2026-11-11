@@ -214,6 +214,14 @@ export interface AcpNewSessionResult {
     };
 }
 
+/**
+ * Result of `session/load`: the agent replays the conversation through
+ * `session/update` notifications and may repeat its model list.
+ */
+export interface AcpLoadSessionResult {
+    readonly models?: AcpNewSessionResult['models'];
+}
+
 /** Usage an agent may attach to a finished turn. */
 export interface AcpPromptUsage {
     readonly inputTokens?: number;
@@ -250,6 +258,22 @@ export class AcpClient {
             throw new Error('ACP agent did not return a session id.');
         }
         return result;
+    }
+
+    /**
+     * Loads an earlier session through ACP's own resume call.
+     *
+     * Only valid when `initialize` advertised `agentCapabilities.loadSession`;
+     * otherwise the caller must start a new session instead of guessing. The
+     * agent replays history as `session/update` notifications while this request
+     * is outstanding.
+     */
+    loadSession(sessionId: string, cwd: string): Promise<AcpLoadSessionResult> {
+        return this.connection.request<AcpLoadSessionResult>('session/load', {
+            sessionId,
+            cwd,
+            mcpServers: []
+        });
     }
 
     /** Starts one turn. Resolves when the agent finishes it. */

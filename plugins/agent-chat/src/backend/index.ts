@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import type { BackendPluginAPI } from '@icebox/plugin-api';
-import { WORKSPACE_SERVICE_IDS } from '@icebox/plugin-api';
+import { WORKSPACE_EVENT_IDS, WORKSPACE_SERVICE_IDS } from '@icebox/plugin-api';
 import { AcpClient, AcpConnection, type AcpModelInfo, type AcpPromptUsage } from '../acp.js';
 import { PiRpcConnection } from '../pi-rpc.js';
 import { executableExists } from '../spawn.js';
@@ -12,6 +12,9 @@ import type {
     AgentModelInfo,
     AgentModelState,
     AgentProtocol,
+    AgentSessionHandle,
+    AgentSessionOptions,
+    AgentSessionSummary,
     AgentSessionsService,
     AgentState,
     AgentUsageInfo,
@@ -65,6 +68,9 @@ interface PiModel {
 interface PiState {
     readonly model?: PiModel;
     readonly thinkingLevel?: unknown;
+    readonly sessionFile?: unknown;
+    readonly sessionId?: unknown;
+    readonly sessionName?: unknown;
 }
 
 /** `get_session_stats` payload. */
@@ -160,6 +166,14 @@ interface LiveSession {
     queue: string[];
     /** State of the transcript under streaming updates. */
     streamingText: boolean;
+    /** The agent's own session handle, once it has started. */
+    resume?: AgentSessionHandle;
+    /** Keep the agent's conversation on disk so a later resume can find it. */
+    persist: boolean;
+    /** True while a native session loads and its history is being replayed. */
+    replaying: boolean;
+    /** ISO timestamp of the last state change, for the session summary. */
+    updatedAt: string;
 }
 
 /**
@@ -192,7 +206,42 @@ export function activate(api: BackendPluginAPI): void {
         capabilities: session.link?.capabilities,
         model: session.model,
         usage: session.usage,
-        commands: session.commands
+        commands: session.commands,
+        resume: session.resume
+    });
+
+    const now = (): string => new Date().toISOString();
+
+    /**
+     * Records a state change and tells workspace plugins (Projects) about it.
+     *
+     * The payload is just the id: a listener that wants details asks
+     * `summary()`, so transcripts never travel on the shared event bus.
+     */
+    const touch = (session: LiveSession): void => {
+        session.updatedAt = now();
+        api.events.emit(WORKSPACE_EVENT_IDS.agentSessionChanged, { sessionId: session.sessionId });
+    };
+
+    /** First line of the first prompt, used as the session title in a list. */
+    const titleOf = (session: LiveSession): string | undefined => {
+        const first = session.entries.find(entry => entry.role === 'user');
+        const line = first?.text.trim().split('\n')[0]?.trim();
+        if (!line) {
+            return undefined;
+        }
+        return line.length > 80 ? `${line.slice(0, 79)}…` : line;
+    };
+
+    const summaryOf = (session: LiveSession): AgentSessionSummary => ({
+        sessionId: session.sessionId,
+        agentId: session.agentId,
+        status: session.status,
+        live: true,
+        cwd: session.cwd,
+        title: titleOf(session),
+        resume: session.resume,
+        updatedAt: session.updatedAt
     });
 
     const sessionFor = (sessionId: string): LiveSession => {
@@ -211,7 +260,10 @@ export function activate(api: BackendPluginAPI): void {
             commands: [],
             models: [],
             queue: [],
-            streamingText: false
+            streamingText: false,
+            persist: false,
+            replaying: false,
+            updatedAt: now()
         };
         sessions.set(sessionId, created);
         return created;
@@ -220,11 +272,21 @@ export function activate(api: BackendPluginAPI): void {
     const service: AgentSessionsService = {
         listAgents: () => agents,
 
-        openSession: async (sessionId, agentId) => {
+        openSession: async (sessionId: string, agentId: string, options?: AgentSessionOptions) => {
             const agent = agentById(agentId);
             const session = sessionFor(sessionId);
+            // A handle for another agent would resume the wrong process; the
+            // panel only ever passes the handle that belongs to its agent.
+            const resume = options?.resume && options.resume.agentId === agentId ? options.resume : undefined;
+            const workingDirectory = options?.cwd ? path.resolve(options.cwd) : session.cwd;
             if (session.agentId === agentId) {
-                return snapshot(session);
+                // A second caller can address the same logical session (a project
+                // list resuming a session that is still open). Reuse the live
+                // link rather than starting a second process on the same agent
+                // session file, which would corrupt it.
+                if (session.link?.alive || resume === undefined) {
+                    return snapshot(session);
+                }
             }
             // Switching agents on an existing tab must not leave the previous
             // child running or its transcript behind.
@@ -241,11 +303,18 @@ export function activate(api: BackendPluginAPI): void {
             session.commands = [];
             session.models = [];
             session.queue = [];
+            session.cwd = workingDirectory;
+            session.resume = resume;
+            // Persisting is what makes a later resume possible at all: a project
+            // chat keeps its session on disk, a plain chat stays ephemeral.
+            session.persist = resume !== undefined || options?.cwd !== undefined;
+            session.replaying = false;
+            touch(session);
             // Start straight away: the model and command labels are only
             // meaningful once the agent is up, and the user opened this tab to
             // talk to it. The process is released when the tab closes.
             if (executableExists(agent.command)) {
-                void ensureStarted(session, cwd)
+                void ensureStarted(session, session.cwd)
                     .then(async link => {
                         await refreshIntrospection(session, link);
                         // `ensureStarted` marks the session `starting`; a start
@@ -254,6 +323,7 @@ export function activate(api: BackendPluginAPI): void {
                         if (session.status === 'starting') {
                             session.status = 'idle';
                         }
+                        touch(session);
                     })
                     .catch(error => failSession(session, error));
             }
@@ -261,6 +331,16 @@ export function activate(api: BackendPluginAPI): void {
         },
 
         state: async sessionId => snapshot(sessionFor(sessionId)),
+
+        summary: async sessionId => {
+            const live = sessions.get(sessionId);
+            if (!live) {
+                return { sessionId, agentId: '', status: 'idle', live: false };
+            }
+            return summaryOf(live);
+        },
+
+        listLiveSessions: async () => [...sessions.values()].map(session => summaryOf(session)),
 
         send: async (sessionId, text) => {
             const session = sessionFor(sessionId);
@@ -284,9 +364,13 @@ export function activate(api: BackendPluginAPI): void {
                     session.queue = [];
                     session.usage = undefined;
                     session.streamingText = false;
+                    // `/new` starts a fresh agent-side session, so the old handle
+                    // must not be kept: a later resume would reopen the old one.
+                    session.resume = undefined;
                     await refreshIntrospection(session, session.link);
                 });
                 pushEntry(session, { role: 'system', text: 'Started a new agent session.' });
+                touch(session);
                 return snapshot(session);
             }
             if (session.status === 'running') {
@@ -301,12 +385,15 @@ export function activate(api: BackendPluginAPI): void {
                 session.error = `"${session.agent.command}" was not found on PATH.`;
                 pushEntry(session, { role: 'user', text });
                 pushEntry(session, { role: 'system', text: session.error });
+                touch(session);
                 return snapshot(session);
             }
             pushEntry(session, { role: 'user', text });
             session.streamingText = false;
             session.status = 'running';
             session.error = undefined;
+            // The first prompt is what gives a project's session list its title.
+            touch(session);
             const prompt = await inlineMentions(text, session);
             void runTurn(session, prompt).catch(() => undefined);
             return snapshot(session);
@@ -318,6 +405,11 @@ export function activate(api: BackendPluginAPI): void {
                 return;
             }
             session.link?.dispose();
+            session.link = undefined;
+            session.status = 'idle';
+            // Tell listeners before the record disappears: a project list keeps
+            // the last known status/handle of a closed tab.
+            touch(session);
             sessions.delete(sessionId);
         },
 
@@ -404,6 +496,7 @@ export function activate(api: BackendPluginAPI): void {
             session.status = result.failed ? 'error' : 'idle';
             session.error = result.failed ? `"${command}" failed.` : undefined;
             await refreshUsage(session);
+            touch(session);
         } catch (error) {
             failSession(session, error);
         }
@@ -422,6 +515,7 @@ export function activate(api: BackendPluginAPI): void {
                 await refreshUsage(session);
             }
             drainQueue(session);
+            touch(session);
         } catch (error) {
             failSession(session, error);
         }
@@ -503,19 +597,54 @@ export function activate(api: BackendPluginAPI): void {
                 + 'Log in with that agent CLI first, then reopen this chat.'
             );
         }
-        const created = await client.newSession(workingDirectory);
-        sessionId = created.sessionId;
-        if (created.models?.availableModels?.length) {
-            modelState = {
-                current: created.models.currentModelId
-                    ? toAcpModel(created.models.currentModelId, created.models.availableModels)
-                    : undefined,
-                modelCount: created.models.availableModels.length
-            };
-            session.models = created.models.availableModels
-                .map(info => toAcpModelInfo(info))
-                .filter((info): info is AgentModelInfo => info !== undefined);
+        const resume = session.resume;
+        const supportsLoad = isLoadSessionSupported(initialized.agentCapabilities);
+        if (resume && supportsLoad) {
+            // Native resume: the agent replays the conversation through
+            // `session/update` notifications, so the transcript is rebuilt from
+            // the same events a live turn produces.
+            session.replaying = true;
+            try {
+                const loaded = await client.loadSession(resume.sessionId, workingDirectory);
+                sessionId = resume.sessionId;
+                session.resume = { agentId: agent.id, protocol: 'acp', sessionId };
+                if (loaded.models?.availableModels?.length) {
+                    modelState = {
+                        current: loaded.models.currentModelId
+                            ? toAcpModel(loaded.models.currentModelId, loaded.models.availableModels)
+                            : undefined,
+                        modelCount: loaded.models.availableModels.length
+                    };
+                    session.models = loaded.models.availableModels
+                        .map(info => toAcpModelInfo(info))
+                        .filter((info): info is AgentModelInfo => info !== undefined);
+                }
+            } finally {
+                session.replaying = false;
+            }
+        } else {
+            if (resume) {
+                pushEntry(session, {
+                    role: 'system',
+                    text: `"${agent.name}" cannot restore an earlier session; started a new one.`
+                });
+            }
+            const created = await client.newSession(workingDirectory);
+            sessionId = created.sessionId;
+            session.resume = { agentId: agent.id, protocol: 'acp', sessionId };
+            if (created.models?.availableModels?.length) {
+                modelState = {
+                    current: created.models.currentModelId
+                        ? toAcpModel(created.models.currentModelId, created.models.availableModels)
+                        : undefined,
+                    modelCount: created.models.availableModels.length
+                };
+                session.models = created.models.availableModels
+                    .map(info => toAcpModelInfo(info))
+                    .filter((info): info is AgentModelInfo => info !== undefined);
+            }
         }
+        touch(session);
         const live = client;
         return {
             get alive() {
@@ -547,21 +676,48 @@ export function activate(api: BackendPluginAPI): void {
         agent: AgentDescriptor,
         workingDirectory: string
     ): Promise<AgentLink> {
-        const connection = new PiRpcConnection(agent.command, agent.args, workingDirectory, {
+        const resume = session.resume;
+        const connection = new PiRpcConnection(agent.command, piArgs(agent.args, session.persist, resume), workingDirectory, {
             event: record => {
                 appendPiEvent(session, record);
                 if (record.type === 'agent_settled') {
                     drainQueue(session);
+                    touch(session);
                 }
             },
             uiRequest: record => answerPiUiRequest(session, connection, record),
             exit: reason => handleExit(session, reason)
         });
-        try {
-            await connection.start();
-        } catch (error) {
+        const handshake = await connection.start().catch(error => {
             connection.dispose();
             throw error;
+        });
+
+        // Pi reports the session it opened (or resumed). That id/file is what a
+        // later resume must pass to `--session`; without it the conversation
+        // could never be continued.
+        const nativeId = readString(handshake?.sessionId);
+        const sessionFile = readString(handshake?.sessionFile);
+        if (nativeId) {
+            session.resume = {
+                agentId: agent.id,
+                protocol: 'pi-rpc',
+                sessionId: nativeId,
+                ...(sessionFile ? { sessionFile } : {})
+            };
+            touch(session);
+        }
+        if (resume) {
+            // The agent keeps its own history; read it back so the panel shows
+            // the conversation it is continuing instead of an empty transcript.
+            const restored = await connection
+                .request<{ messages?: readonly Record<string, unknown>[] }>({ type: 'get_messages' })
+                .then(result => piTranscript(result?.messages ?? []))
+                .catch(() => []);
+            if (restored.length > 0) {
+                session.entries = restored.slice(-MAX_ENTRIES);
+                touch(session);
+            }
         }
 
         const loadModels = async (): Promise<AgentModelInfo[]> => {
@@ -606,6 +762,20 @@ export function activate(api: BackendPluginAPI): void {
                     const result = await connection.request<{ cancelled?: unknown }>({ type: 'new_session' });
                     if (result?.cancelled === true) {
                         throw new Error('The agent cancelled the new session.');
+                    }
+                    // `/new` replaces the agent-side conversation: re-read the
+                    // session Pi created so a later resume opens the new one, not
+                    // the one that was just discarded.
+                    const state = await connection.request<PiState>({ type: 'get_state' }).catch(() => undefined);
+                    const nativeId = readString(state?.sessionId);
+                    if (nativeId) {
+                        const sessionFile = readString(state?.sessionFile);
+                        session.resume = {
+                            agentId: agent.id,
+                            protocol: 'pi-rpc',
+                            sessionId: nativeId,
+                            ...(sessionFile ? { sessionFile } : {})
+                        };
                     }
                 },
                 refreshCommands: async () => {
@@ -676,6 +846,7 @@ export function activate(api: BackendPluginAPI): void {
         }
         session.queue.push(text);
         pushEntry(session, { role: 'system', text: 'Queued: sent when the current turn ends.' });
+        touch(session);
     }
 
     /** Starts the next queued message once the session is idle again. */
@@ -702,12 +873,14 @@ export function activate(api: BackendPluginAPI): void {
         session.status = 'error';
         session.error = describeError(error);
         pushEntry(session, { role: 'system', text: session.error });
+        touch(session);
     }
 
     /** Runs an operation that can fail, surfacing the error in the transcript. */
     async function guard(session: LiveSession, operation: () => Promise<void>): Promise<void> {
         try {
             await operation();
+            touch(session);
         } catch (error) {
             failSession(session, error);
             throw error;
@@ -864,6 +1037,20 @@ function appendAcpUpdate(session: LiveSession, params: Record<string, unknown>):
             return;
         }
         appendAgentText(session, text);
+        return;
+    }
+
+    // ACP replays the whole conversation through `session/update` while
+    // `session/load` is outstanding. Live user chunks are skipped because the
+    // panel already pushed the prompt it sent.
+    if (kind === 'user_message_chunk' && session.replaying) {
+        const text = contentText(update.content);
+        if (text) {
+            // A replayed user turn starts a new transcript entry; without this
+            // the replayed assistant messages would merge into one bubble.
+            session.streamingText = false;
+            pushEntry(session, { role: 'user', text });
+        }
         return;
     }
 
@@ -1086,6 +1273,88 @@ function readString(value: unknown): string | undefined {
 
 function readNumber(value: unknown): number | undefined {
     return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+/** True when the agent advertised that it can reload an earlier session. */
+function isLoadSessionSupported(capabilities: unknown): boolean {
+    if (typeof capabilities !== 'object' || capabilities === null) {
+        return false;
+    }
+    return (capabilities as Record<string, unknown>).loadSession === true;
+}
+
+/**
+ * Pi's command line for this session.
+ *
+ * A project chat must persist so a later resume can find it, and a resumed chat
+ * passes the agent's own handle to `--session` — the same flag Pi's interactive
+ * resume uses. Plain chat tabs keep `--no-session`, as before.
+ */
+function piArgs(baseArgs: readonly string[], persist: boolean, resume: AgentSessionHandle | undefined): string[] {
+    if (resume) {
+        const args = baseArgs.filter(arg => arg !== '--no-session');
+        return [...args, '--session', resume.sessionFile ?? resume.sessionId];
+    }
+    return persist ? baseArgs.filter(arg => arg !== '--no-session') : [...baseArgs];
+}
+
+/** Maps Pi's persisted messages back onto the panel transcript. */
+function piTranscript(messages: readonly Record<string, unknown>[]): ChatEntry[] {
+    const entries: ChatEntry[] = [];
+    for (const message of messages) {
+        const role = readString(message.role);
+        if (role === 'user') {
+            const text = piContentText(message.content);
+            if (text) {
+                entries.push({ role: 'user', text });
+            }
+            continue;
+        }
+        if (role === 'assistant') {
+            for (const block of piContentBlocks(message.content)) {
+                const kind = readString(block.type);
+                if (kind === 'text') {
+                    const text = readString(block.text);
+                    if (text) {
+                        entries.push({ role: 'agent', text });
+                    }
+                } else if (kind === 'toolCall') {
+                    entries.push({ role: 'tool', text: `tool: ${readString(block.name) ?? 'tool'}` });
+                }
+            }
+            continue;
+        }
+        if (role === 'toolResult') {
+            const name = readString(message.toolName) ?? 'tool';
+            const text = piContentText(message.content);
+            entries.push({ role: 'tool', text: text ? `tool: ${name}\n${text}` : `tool: ${name}` });
+            continue;
+        }
+        if (role === 'bashExecution') {
+            const command = readString(message.command);
+            const output = readString(message.output) ?? '';
+            if (command) {
+                entries.push({ role: 'tool', text: `$ ${command}${output ? `\n${output.trimEnd()}` : ''}` });
+            }
+        }
+    }
+    return entries;
+}
+
+function piContentBlocks(content: unknown): Record<string, unknown>[] {
+    return Array.isArray(content)
+        ? content.filter((block): block is Record<string, unknown> => typeof block === 'object' && block !== null)
+        : [];
+}
+
+function piContentText(content: unknown): string | undefined {
+    if (typeof content === 'string') {
+        return content;
+    }
+    const texts = piContentBlocks(content)
+        .map(block => readString(block.text))
+        .filter((text): text is string => Boolean(text));
+    return texts.length > 0 ? texts.join('\n') : undefined;
 }
 
 function describeError(error: unknown): string {

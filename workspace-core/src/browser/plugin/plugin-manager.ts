@@ -16,6 +16,7 @@ import { WorkspaceDockingService } from '../workspace-docking-service.js';
 import { WorkspacePanelRegistry } from '../workspace-panel-registry.js';
 import { WorkspaceSelectionService } from '../workspace-selection-service.js';
 import { WorkspaceResourceService } from '../workspace-resource-service.js';
+import { WorkspaceDialogService } from '../workspace-dialog-service.js';
 import { HostPanelFactoryRegistry } from '../host-panels/host-panel-factory-registry.js';
 import { PluginEventBus, PluginServiceRegistry } from './plugin-kernel.js';
 import { PluginFrontendHost } from './plugin-frontend-host.js';
@@ -65,6 +66,7 @@ export class PluginManager implements FrontendApplicationContribution {
         @inject(PluginEventBus) protected readonly events: PluginEventBus,
         @inject(WorkspaceSelectionService) protected readonly selection: WorkspaceSelectionService,
         @inject(WorkspaceResourceService) protected readonly resources: WorkspaceResourceService,
+        @inject(WorkspaceDialogService) protected readonly dialogs: WorkspaceDialogService,
         @inject(HostPanelFactoryRegistry) protected readonly hostPanels: HostPanelFactoryRegistry,
         @inject(CommandRegistry) protected readonly commands: CommandRegistry,
         @inject(MessageService) protected readonly messages: MessageService,
@@ -100,7 +102,11 @@ export class PluginManager implements FrontendApplicationContribution {
         if (this.hostServiceDisposers.length > 0) {
             return;
         }
-        this.hostServiceDisposers = [this.resources.install(), this.selection.install()];
+        this.hostServiceDisposers = [
+            this.resources.install(),
+            this.selection.install(),
+            this.dialogs.install()
+        ];
     }
 
     onStop(): void {

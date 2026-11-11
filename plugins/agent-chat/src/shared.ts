@@ -1,26 +1,24 @@
 /** Wire types shared by the agent-chat plugin's renderer and backend halves. */
 
-/**
- * Wire protocol the backend speaks to an agent CLI.
- *
- * `acp` is the Agent Client Protocol (JSON-RPC over stdio), spoken by Gemini CLI,
- * Claude Code and others. `pi-rpc` is Pi's own JSONL command/event protocol
- * (`pi --mode rpc`); Pi does not implement ACP.
- */
-export type AgentProtocol = 'acp' | 'pi-rpc';
+import type {
+    AgentDescriptor,
+    AgentSessionHandle,
+    AgentSessionOptions,
+    AgentSessionSummary,
+    AgentStatus
+} from '@icebox/plugin-api';
 
-/** One agent executable the backend can control. */
-export interface AgentDescriptor {
-    readonly id: string;
-    readonly name: string;
-    readonly protocol: AgentProtocol;
-    readonly command: string;
-    readonly args: readonly string[];
-    /** False when the executable is not on `PATH`; shown as unavailable. */
-    readonly available: boolean;
-}
-
-export type AgentStatus = 'idle' | 'starting' | 'running' | 'error';
+// The agent wire contract is public: other workspace plugins (Projects) consume
+// the same descriptors, handles and summaries. Re-exporting keeps every existing
+// import path inside this plugin working.
+export type {
+    AgentDescriptor,
+    AgentProtocol,
+    AgentSessionHandle,
+    AgentSessionOptions,
+    AgentSessionSummary,
+    AgentStatus
+} from '@icebox/plugin-api';
 
 /** One transcript entry. `tool` entries are tool calls and shell runs. */
 export interface ChatEntry {
@@ -109,6 +107,14 @@ export interface AgentState {
     readonly model?: AgentModelState;
     readonly usage?: AgentUsageInfo;
     readonly commands?: readonly AgentCommand[];
+    /**
+     * The agent's own handle for this conversation.
+     *
+     * Present once the agent has started; a workspace plugin stores it verbatim
+     * and passes it back as {@link AgentSessionOptions.resume} to continue the
+     * same agent-side session instead of starting a new one.
+     */
+    readonly resume?: AgentSessionHandle;
 }
 
 /**
@@ -125,10 +131,30 @@ export interface AgentSessionsService {
      * Binds a session to an agent (creating the session on first use) and returns
      * its current state. Re-binding an existing session switches its agent and
      * clears the transcript.
+     *
+     * `options.cwd` makes the agent run in that folder instead of the workspace
+     * directory. `options.resume` continues an earlier agent-side conversation
+     * through the agent's native mechanism (`--session` for Pi, `session/load` for
+     * ACP) and rebuilds the transcript from it.
      */
-    openSession(sessionId: string, agentId: string): Promise<AgentState>;
+    openSession(sessionId: string, agentId: string, options?: AgentSessionOptions): Promise<AgentState>;
     /** Transcript and status of a session; empty and idle when it is unknown. */
     state(sessionId: string): Promise<AgentState>;
+    /**
+     * Cheap status/title/handle snapshot of a session.
+     *
+     * `live` is false for an unknown session, so a caller can tell "nothing is
+     * running under this id" from "an agent is idle".
+     */
+    summary(sessionId: string): Promise<AgentSessionSummary>;
+    /**
+     * Every live session on this backend.
+     *
+     * A project list uses this to adopt a chat opened with a project's working
+     * directory from elsewhere (the chat's own + button, for example), so every
+     * session that ran in a project is stored and resumable.
+     */
+    listLiveSessions(): Promise<AgentSessionSummary[]>;
     /**
      * Appends the prompt and starts the turn; resolves once it is running.
      *

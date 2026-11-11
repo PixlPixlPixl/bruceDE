@@ -1,0 +1,32 @@
+{
+    "id": "icebox.projects",
+    "name": "Projects",
+    "version": "0.1.0",
+    "apiVersion": 1,
+    "description": "Project folders and the agent sessions stored in them.",
+    "entrypoints": {
+        "frontend": "./dist/frontend.js",
+        "backend": "./dist/backend.js"
+    },
+    "dependencies": {
+        "icebox.workspace": "^0.1.0",
+        "icebox.agent-chat": "^0.1.0"
+    },
+    "contributes": {
+        "panels": [
+            {
+                "id": "projects.list",
+                "title": "Projects"
+            }
+        ],
+        "commands": [
+            {
+                "id": "icebox.projects.open",
+                "title": "Projects: Open Projects"
+            }
+        ],
+        "services": [
+            "projects.store"
+        ]
+    }
+}
