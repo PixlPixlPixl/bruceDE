@@ -89,9 +89,15 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   can learn the process working directory. The header carries an icon-only
   Refresh button (`codicon codicon-refresh`, `aria-label="Refresh"`), not a
   text button.
-- **Git** (`bruce.git`) — backend half runs `git status --porcelain=v2` in the
-  user's work tree and provides `git.repository`; the panel reads it through
-  `api.services.remote` and republishes `git/changes-updated` in the renderer.
+- **Git** (`bruce.git`) — backend half runs `git status --porcelain=v2` and
+  `git diff HEAD --numstat -z` in the user's work tree and provides
+  `git.repository`; the panel reads it through `api.services.remote` and
+  republishes `git/changes-updated` in the renderer. Each file carries its own
+  `+N`/`-M` line counts against `HEAD` (staged and unstaged together), and the
+  rows are coloured by what the change means — added, modified, deleted, renamed,
+  conflicted, untracked — using the `--theia-gitDecoration-*` tokens with
+  fallbacks, because this build ships no Git extension to define them.
+  Untracked and binary files show no counts rather than a fabricated zero.
 - **Agent Chat** (`bruce.agent-chat`) — backend half drives an installed agent
   CLI and provides `agent.sessions`. Two wire protocols are supported, because
   the ecosystem is not uniform:

@@ -668,6 +668,60 @@ check(
     );
 }
 
+console.log('git panel rendering');
+const gitFrontend = await readSource('plugins/git/src/frontend/index.tsx');
+const gitBackend = await readSource('plugins/git/src/backend/index.ts');
+const gitShared = await readSource('plugins/git/src/shared.ts');
+check(
+    'file rows inherit the panel foreground instead of button default',
+    gitFrontend.includes("color: 'inherit'"),
+    'a bare <button> would paint its label black on the dark background'
+);
+check(
+    'each change kind has its own colour',
+    ['added', 'modified', 'deleted', 'renamed', 'conflict', 'untracked'].every(kind =>
+        gitFrontend.includes(`${kind}: 'var(--theia-gitDecoration-`)),
+    'modified, deleted and added files would look alike'
+);
+check(
+    'git colours carry fallbacks for themes without git tokens',
+    (gitFrontend.match(/--theia-gitDecoration-[a-zA-Z]+ResourceForeground, #[0-9a-f]{6}/g) ?? []).length >= 5,
+    'the host defines these tokens only when a git extension contributes them'
+);
+check(
+    'the panel shows per-file line counts',
+    gitFrontend.includes('+\${added}') && gitFrontend.includes('-\${deleted}')
+        && gitShared.includes('readonly added?: number') && gitShared.includes('readonly deleted?: number'),
+    'a changed file would not say how much changed'
+);
+check(
+    'line counts come from a numstat diff against HEAD',
+    gitBackend.includes("'diff', 'HEAD', '--numstat', '-z'") && gitBackend.includes('parseNumstat'),
+    'counts would describe only one side of the index'
+);
+check(
+    'numstat parsing handles renames and binary files',
+    gitBackend.includes('Rename/copy: the counts record has no path of its own')
+        && gitBackend.includes('Number.isFinite(added)'),
+    'a rename or binary file would corrupt the counts'
+);
+check(
+    'untracked files do not invent counts',
+    gitBackend.includes('const count = counts.get(change.path)') && gitBackend.includes('return count ?'),
+    'an untracked file has no diff to measure'
+);
+check(
+    'the git header refreshes through an icon button',
+    gitFrontend.includes("'codicon codicon-refresh'") && gitFrontend.includes("'aria-label': 'Refresh'")
+        && !gitFrontend.replace(/'aria-label': 'Refresh'/, '').includes("'Refresh'"),
+    'the git header still carries a wordy refresh button'
+);
+check(
+    'the git panel uses the shared row gutter',
+    gitFrontend.includes("padding: '3px 14px'") && gitFrontend.includes("padding: '10px 14px 4px'"),
+    'rows and section headings would not line up with the header'
+);
+
 console.log('install and build scripts avoid Windows shims');
 {
     // `node_modules/.bin` wrappers are .cmd files on Windows whose last line is

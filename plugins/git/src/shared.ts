@@ -11,6 +11,15 @@ export interface GitChange {
     readonly staged: boolean;
     /** True for `?` (untracked) entries. */
     readonly untracked: boolean;
+    /**
+     * Lines added and removed relative to `HEAD`, summed over the index and the
+     * working tree so the number describes the file as it is now.
+     *
+     * Absent for untracked files (they are not in `HEAD`, so there is nothing to
+     * diff against) and for binary files (`git` reports `-` instead of a count).
+     */
+    readonly added?: number;
+    readonly deleted?: number;
 }
 
 /** Snapshot of the repository the backend is running in. */

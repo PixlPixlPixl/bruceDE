@@ -46,10 +46,104 @@ async function readStatus(cwd: string): Promise<GitStatus> {
             timeout: GIT_TIMEOUT_MS,
             maxBuffer: 8 * 1024 * 1024
         });
-        return { repository: true, root, ...parsePorcelainV2(stdout) };
+        const parsed = parsePorcelainV2(stdout);
+        const counts = await readLineCounts(root);
+        return {
+            repository: true,
+            root,
+            ...parsed,
+            changes: parsed.changes.map(change => {
+                const count = counts.get(change.path);
+                return count ? { ...change, ...count } : change;
+            })
+        };
     } catch (error) {
         return { ...empty, root, error: describeError(error) };
     }
+}
+
+interface LineCounts {
+    readonly added: number;
+    readonly deleted: number;
+}
+
+/**
+ * Lines changed per path, against `HEAD`.
+ *
+ * `git diff HEAD` covers staged *and* unstaged edits in one call, so the number
+ * matches the file as the user sees it rather than one side of the index. A
+ * repository without commits has no `HEAD`, and there the two halves are summed
+ * instead.
+ */
+async function readLineCounts(root: string): Promise<Map<string, LineCounts>> {
+    const counts = new Map<string, LineCounts>();
+    const collect = async (args: readonly string[]): Promise<boolean> => {
+        try {
+            const { stdout } = await run('git', [...args], {
+                cwd: root,
+                timeout: GIT_TIMEOUT_MS,
+                maxBuffer: 8 * 1024 * 1024
+            });
+            parseNumstat(stdout, counts);
+            return true;
+        } catch {
+            // No HEAD yet, or the diff failed; the panel simply shows no counts.
+            return false;
+        }
+    };
+    if (await collect(['diff', 'HEAD', '--numstat', '-z'])) {
+        return counts;
+    }
+    await collect(['diff', '--numstat', '-z']);
+    await collect(['diff', '--cached', '--numstat', '-z']);
+    return counts;
+}
+
+/**
+ * Parses `git diff --numstat -z`.
+ *
+ * Each record is `added<TAB>deleted<TAB>path`, NUL-terminated. With `-z` a
+ * rename or copy carries an *empty* path and the old and new path as two more
+ * NUL tokens, so the record itself is the only place the counts live — the new
+ * path is the one `git status` reports, so that is the key used here. Binary
+ * files report `-` instead of numbers and are skipped.
+ */
+export function parseNumstat(output: string, into: Map<string, LineCounts> = new Map()): Map<string, LineCounts> {
+    const tokens = output.split('\0');
+    const add = (path: string, added: number, deleted: number): void => {
+        if (!Number.isFinite(added) || !Number.isFinite(deleted)) {
+            return;
+        }
+        const existing = into.get(path);
+        into.set(path, existing
+            ? { added: existing.added + added, deleted: existing.deleted + deleted }
+            : { added, deleted });
+    };
+
+    for (let index = 0; index < tokens.length; index++) {
+        const token = tokens[index];
+        if (!token) {
+            continue;
+        }
+        const firstTab = token.indexOf('\t');
+        const secondTab = token.indexOf('\t', firstTab + 1);
+        if (firstTab === -1 || secondTab === -1) {
+            continue;
+        }
+        const added = Number.parseInt(token.slice(0, firstTab), 10);
+        const deleted = Number.parseInt(token.slice(firstTab + 1, secondTab), 10);
+        const path = token.slice(secondTab + 1);
+        if (path) {
+            add(path, added, deleted);
+            continue;
+        }
+        // Rename/copy: the counts record has no path of its own.
+        const original = tokens[index + 1];
+        const renamed = tokens[index + 2];
+        index += 2;
+        add(renamed ?? original ?? '', added, deleted);
+    }
+    return into;
 }
 
 interface ParsedStatus {

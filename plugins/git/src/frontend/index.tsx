@@ -114,31 +114,50 @@ function GitPanel(props: GitPanelProps): ReactNS.ReactNode {
             'div',
             { style: HEADER_STYLE },
             React.createElement(
-                'span',
-                { style: TITLE_STYLE },
-                status?.repository
-                    ? `${status.branch ?? 'detached'}${aheadBehind(status)}`
-                    : 'Git'
+                'div',
+                { style: HEADER_TEXT_STYLE },
+                React.createElement(
+                    'span',
+                    { style: BRANCH_STYLE },
+                    status?.repository ? (status.branch ?? 'detached HEAD') : 'Git'
+                ),
+                status?.repository && (status.ahead > 0 || status.behind > 0)
+                    ? React.createElement('span', { style: MUTED_INLINE_STYLE }, aheadBehind(status))
+                    : undefined,
+                status?.root
+                    ? React.createElement('span', { style: ROOT_STYLE, title: status.root }, baseName(status.root))
+                    : undefined
             ),
             React.createElement(
                 'button',
-                { type: 'button', style: BUTTON_STYLE, onClick: refresh, disabled: busy },
-                busy ? '…' : 'Refresh'
+                {
+                    type: 'button',
+                    style: ICON_BUTTON_STYLE,
+                    title: 'Refresh the change list',
+                    'aria-label': 'Refresh',
+                    onClick: refresh,
+                    disabled: busy
+                },
+                // Icon from the codicon font the shell already loads.
+                React.createElement('i', {
+                    className: busy ? 'codicon codicon-loading codicon-modifier-spin' : 'codicon codicon-refresh',
+                    'aria-hidden': true
+                })
             )
         ),
         React.createElement(
             'div',
             { style: LIST_STYLE },
-            error ? React.createElement('div', { style: MUTED_STYLE }, error) : undefined,
+            error ? React.createElement('div', { style: MESSAGE_STYLE }, error) : undefined,
             status && !status.repository && !error
-                ? React.createElement('div', { style: MUTED_STYLE }, 'Not a git repository.')
+                ? React.createElement('div', { style: MESSAGE_STYLE }, 'Not a git repository.')
                 : undefined,
             status?.repository && status.changes.length === 0
-                ? React.createElement('div', { style: MUTED_STYLE }, 'No changes.')
+                ? React.createElement('div', { style: MESSAGE_STYLE }, 'Working tree clean.')
                 : undefined,
-            section(React, 'Staged', staged, open, 'staged'),
-            section(React, 'Changes', unstaged, open, 'unstaged'),
-            section(React, 'Untracked', untracked, open, 'untracked')
+            section(React, 'Staged', staged, open),
+            section(React, 'Changes', unstaged, open),
+            section(React, 'Untracked', untracked, open)
         )
     );
 }
@@ -147,30 +166,56 @@ function section(
     React: PanelHostTools['React'],
     title: string,
     changes: readonly GitChange[],
-    open: (change: GitChange) => void,
-    tone: 'staged' | 'unstaged' | 'untracked'
+    open: (change: GitChange) => void
 ): ReactNS.ReactNode {
     if (changes.length === 0) {
         return undefined;
     }
+    const added = changes.reduce((total, change) => total + (change.added ?? 0), 0);
+    const deleted = changes.reduce((total, change) => total + (change.deleted ?? 0), 0);
     return React.createElement(
         'div',
-        { key: tone, style: { marginBottom: '8px' } },
-        React.createElement('div', { style: TITLE_STYLE }, `${title} (${changes.length})`),
-        changes.map(change =>
-            React.createElement(
-                'button',
-                {
-                    key: `${tone}:${change.path}`,
-                    type: 'button',
-                    style: ROW_STYLE,
-                    title: change.path,
-                    onClick: () => open(change)
-                },
-                React.createElement('span', { style: BADGE_STYLE }, badge(change)),
-                React.createElement('span', { style: { ...PATH_STYLE, color: toneColor(tone) } }, change.path)
-            )
-        )
+        { key: title },
+        React.createElement(
+            'div',
+            { style: SECTION_STYLE },
+            React.createElement('span', undefined, `${title} · ${changes.length}`),
+            added > 0 || deleted > 0
+                ? React.createElement(
+                      'span',
+                      { style: SUMMARY_COUNTS_STYLE },
+                      added > 0 ? React.createElement('span', { style: ADDED_STYLE }, `+${added}`) : undefined,
+                      deleted > 0 ? React.createElement('span', { style: DELETED_STYLE }, `-${deleted}`) : undefined
+                  )
+                : undefined
+        ),
+        changes.map(change => renderChange(React, change, open))
+    );
+}
+
+/** One file: status letter, path, then its own +/- line counts. */
+function renderChange(
+    React: PanelHostTools['React'],
+    change: GitChange,
+    open: (change: GitChange) => void
+): ReactNS.ReactNode {
+    const kind = kindOf(change);
+    const accent = KIND_COLOR[kind];
+    const added = change.added ?? 0;
+    const deleted = change.deleted ?? 0;
+    return React.createElement(
+        'button',
+        {
+            key: change.path,
+            type: 'button',
+            style: ROW_STYLE,
+            title: `${change.path}${added || deleted ? `  +${added} -${deleted}` : ''}`,
+            onClick: () => open(change)
+        },
+        React.createElement('span', { style: { ...BADGE_STYLE, color: accent } }, badge(change)),
+        React.createElement('span', { style: { ...PATH_STYLE, color: accent } }, change.path),
+        added > 0 ? React.createElement('span', { style: ADDED_STYLE }, `+${added}`) : undefined,
+        deleted > 0 ? React.createElement('span', { style: DELETED_STYLE }, `-${deleted}`) : undefined
     );
 }
 
@@ -182,27 +227,73 @@ function aheadBehind(status: GitStatus): string {
     if (status.behind > 0) {
         parts.push(`↓${status.behind}`);
     }
-    return parts.length > 0 ? ` ${parts.join(' ')}` : '';
+    return parts.join(' ');
 }
 
 function badge(change: GitChange): string {
     if (change.untracked) {
         return '?';
     }
-    const index = change.indexStatus === '.' ? '' : change.indexStatus;
-    const workTree = change.workTreeStatus === '.' ? '' : change.workTreeStatus;
-    return `${index}${workTree || ''}`.trim() || '·';
+    const letters = `${change.indexStatus}${change.workTreeStatus}`.replace(/\./g, '').trim();
+    return letters.length > 0 ? letters : '·';
 }
 
-function toneColor(tone: 'staged' | 'unstaged' | 'untracked'): string {
-    if (tone === 'staged') {
-        return 'var(--theia-gitDecoration-addedResourceForeground)';
+/** What the change means, which decides its colour. */
+type ChangeKind = 'added' | 'modified' | 'deleted' | 'renamed' | 'conflict' | 'untracked' | 'other';
+
+/**
+ * Port/status hybrid → one kind.
+ *
+ * Precedence follows what the user needs to notice first: a conflict is louder
+ * than a deletion, a deletion louder than an addition (a staged addition that is
+ * gone from the work tree is a deletion now), and a plain edit is the quietest.
+ */
+function kindOf(change: GitChange): ChangeKind {
+    if (change.untracked) {
+        return 'untracked';
     }
-    if (tone === 'unstaged') {
-        return 'var(--theia-gitDecoration-modifiedResourceForeground)';
+    const index = change.indexStatus;
+    const workTree = change.workTreeStatus;
+    const letters = `${index}${workTree}`;
+    if (letters.includes('U')) {
+        return 'conflict';
     }
-    return 'var(--theia-descriptionForeground)';
+    if (letters.includes('D')) {
+        return 'deleted';
+    }
+    if (letters.includes('A')) {
+        return 'added';
+    }
+    if (letters.includes('R') || letters.includes('C')) {
+        return 'renamed';
+    }
+    if (letters.includes('M') || letters.includes('T')) {
+        return 'modified';
+    }
+    return 'other';
 }
+
+function baseName(root: string): string {
+    const trimmed = root.replace(/\/+$/, '');
+    return trimmed.slice(trimmed.lastIndexOf('/') + 1) || trimmed;
+}
+
+/**
+ * Per-kind colour.
+ *
+ * The `--theia-gitDecoration-*` tokens exist only when a Git extension
+ * contributes them, which this build does not have, so every use carries the
+ * fallback from the dark theme it would otherwise inherit.
+ */
+const KIND_COLOR: Record<ChangeKind, string> = {
+    added: 'var(--theia-gitDecoration-addedResourceForeground, #81b88b)',
+    untracked: 'var(--theia-gitDecoration-untrackedResourceForeground, #73c991)',
+    modified: 'var(--theia-gitDecoration-modifiedResourceForeground, #e2c08d)',
+    deleted: 'var(--theia-gitDecoration-deletedResourceForeground, #c74e39)',
+    renamed: 'var(--theia-gitDecoration-renamedResourceForeground, #73c991)',
+    conflict: 'var(--theia-gitDecoration-conflictingResourceForeground, #e4676b)',
+    other: 'var(--theia-descriptionForeground)'
+};
 
 const PANEL_STYLE: ReactNS.CSSProperties = {
     display: 'flex',
@@ -220,59 +311,130 @@ const HEADER_STYLE: ReactNS.CSSProperties = {
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: '8px',
-    padding: '6px 10px',
+    padding: '10px 14px',
     borderBottom: '1px solid var(--theia-panel-border)'
 };
 
-const TITLE_STYLE: ReactNS.CSSProperties = {
-    textTransform: 'uppercase',
-    letterSpacing: '0.08em',
-    fontSize: '11px',
-    opacity: 0.7,
-    padding: '6px 10px 2px'
+const HEADER_TEXT_STYLE: ReactNS.CSSProperties = {
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: '8px',
+    minWidth: 0
 };
 
-const BUTTON_STYLE: ReactNS.CSSProperties = {
+const BRANCH_STYLE: ReactNS.CSSProperties = {
+    fontWeight: 600,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap'
+};
+
+const MUTED_INLINE_STYLE: ReactNS.CSSProperties = {
+    color: 'var(--theia-descriptionForeground)',
+    fontSize: '11px'
+};
+
+const ROOT_STYLE: ReactNS.CSSProperties = {
+    color: 'var(--theia-descriptionForeground)',
+    fontSize: '11px',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap'
+};
+
+/** Square, icon-only button that lines up with the header text. */
+const ICON_BUTTON_STYLE: ReactNS.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '22px',
+    height: '22px',
+    padding: 0,
+    flexShrink: 0,
     background: 'var(--theia-button-secondaryBackground)',
     color: 'var(--theia-button-secondaryForeground)',
     border: 'none',
     borderRadius: '3px',
-    padding: '3px 10px',
     cursor: 'pointer',
-    fontSize: 'inherit'
+    fontSize: '14px'
 };
 
 const LIST_STYLE: ReactNS.CSSProperties = {
     flex: '1',
-    overflow: 'auto',
-    padding: '0 0 8px'
+    overflowY: 'auto',
+    padding: '6px 0 10px'
 };
 
-const MUTED_STYLE: ReactNS.CSSProperties = {
-    padding: '10px',
-    opacity: 0.65
+/** Section heading: name and count on the left, its own diff total on the right. */
+const SECTION_STYLE: ReactNS.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '8px',
+    padding: '10px 14px 4px',
+    color: 'var(--theia-descriptionForeground)',
+    fontSize: '10px',
+    letterSpacing: '0.06em',
+    textTransform: 'uppercase'
 };
 
+const SUMMARY_COUNTS_STYLE: ReactNS.CSSProperties = {
+    display: 'flex',
+    gap: '6px',
+    fontVariantNumeric: 'tabular-nums'
+};
+
+/**
+ * A file row.
+ *
+ * `color: inherit` matters: a bare `<button>` otherwise paints its label with the
+ * browser's default button text colour, which is black and unreadable on the
+ * dark editor background.
+ */
 const ROW_STYLE: ReactNS.CSSProperties = {
     display: 'flex',
+    alignItems: 'center',
     gap: '8px',
     width: '100%',
-    textAlign: 'left',
+    padding: '3px 14px',
     background: 'transparent',
     border: 'none',
-    padding: '2px 10px',
+    color: 'inherit',
     fontFamily: 'var(--theia-code-font-family)',
     fontSize: 'inherit',
+    textAlign: 'left',
+    lineHeight: 1.5,
     cursor: 'pointer'
 };
 
 const BADGE_STYLE: ReactNS.CSSProperties = {
-    minWidth: '18px',
-    opacity: 0.8
+    minWidth: '16px',
+    fontWeight: 600,
+    fontSize: '11px',
+    textAlign: 'center'
 };
 
 const PATH_STYLE: ReactNS.CSSProperties = {
+    flex: '1',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap'
+};
+
+const ADDED_STYLE: ReactNS.CSSProperties = {
+    color: 'var(--theia-gitDecoration-addedResourceForeground, #81b88b)',
+    fontSize: '11px',
+    fontVariantNumeric: 'tabular-nums'
+};
+
+const DELETED_STYLE: ReactNS.CSSProperties = {
+    color: 'var(--theia-gitDecoration-deletedResourceForeground, #c74e39)',
+    fontSize: '11px',
+    fontVariantNumeric: 'tabular-nums'
+};
+
+const MESSAGE_STYLE: ReactNS.CSSProperties = {
+    padding: '10px 14px',
+    color: 'var(--theia-descriptionForeground)',
+    whiteSpace: 'pre-wrap'
 };
