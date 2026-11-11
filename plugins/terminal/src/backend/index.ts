@@ -1,4 +1,4 @@
-import type { BackendPluginAPI } from '@brucede/plugin-api';
+import type { BackendPluginAPI } from '@icebox/plugin-api';
 
 /**
  * Native Node backend entrypoint for terminal.

@@ -65,14 +65,14 @@ function check(label, condition, detail) {
 
 console.log('manifest validation');
 const validManifest = validatePluginManifest({
-    id: 'bruce.sample',
+    id: 'icebox.sample',
     name: 'Sample',
     version: '1.2.3',
     apiVersion: 1,
     entrypoints: { frontend: './dist/frontend.js' },
     contributes: { panels: [{ id: 'main', title: 'Main' }] }
 });
-check('accepts a valid manifest', validManifest.id === 'bruce.sample');
+check('accepts a valid manifest', validManifest.id === 'icebox.sample');
 check('rejects an unsupported apiVersion', throwsManifest({ ...validManifest, apiVersion: 99 }));
 check('rejects a non-namespaced id', throwsManifest({ ...validManifest, id: 'Sample' }));
 check('rejects an escaping entrypoint', throwsManifest({ ...validManifest, entrypoints: { frontend: '../evil.js' } }));
@@ -85,16 +85,16 @@ const discovery = await discoverPlugins([path.join(root, 'plugins')]);
 const ids = discovery.plugins.map(plugin => plugin.manifest.id).sort();
 check(
     'discovers the four built-in plugins',
-    ['bruce.agent-chat', 'bruce.file-browser', 'bruce.git', 'bruce.terminal'].every(id => ids.includes(id)),
+    ['icebox.agent-chat', 'icebox.file-browser', 'icebox.git', 'icebox.terminal'].every(id => ids.includes(id)),
     ids.join(', ')
 );
 check('resolves frontend bundles', discovery.plugins.every(plugin => plugin.frontendEntrypoint));
-check('bruce.workspace is not reported as missing', discovery.diagnostics.every(d => !d.message.includes('bruce.workspace')));
+check('icebox.workspace is not reported as missing', discovery.diagnostics.every(d => !d.message.includes('icebox.workspace')));
 
 console.log('host module rewriting');
-const blobMap = new Map([['/brucede-host-modules/react.js', 'blob:react']]);
+const blobMap = new Map([['/icebox-host-modules/react.js', 'blob:react']]);
 const rewritten = rewriteHostModuleSpecifiers(
-    'import React from "/brucede-host-modules/react.js";',
+    'import React from "/icebox-host-modules/react.js";',
     blobMap
 );
 check('rewrites canonical specifier to blob URL', rewritten.includes('blob:react'));
@@ -118,12 +118,12 @@ const record = await manager.load({
 });
 check('plugin reaches active state', record.state === 'active', record.state);
 check('activate ran', events.includes('activate'));
-await manager.unload('bruce.sample');
+await manager.unload('icebox.sample');
 check('disposer ran on unload', events.includes('dispose'));
-check('plugin is no longer active', !manager.isActive('bruce.sample'));
+check('plugin is no longer active', !manager.isActive('icebox.sample'));
 
 const failed = await manager.load({
-    manifest: { ...validManifest, id: 'bruce.failing' },
+    manifest: { ...validManifest, id: 'icebox.failing' },
     loadModule: async () => {
         throw new Error('import boom');
     },
@@ -136,12 +136,12 @@ const fixtureRoot = await writeDependencyFixture();
 const fixture = await discoverPlugins([fixtureRoot]);
 check(
     'reports a dependency whose version range is unsatisfied',
-    fixture.diagnostics.some(d => d.pluginId === 'bruce.needs-newer' && d.message.includes('^0.2.0')),
+    fixture.diagnostics.some(d => d.pluginId === 'icebox.needs-newer' && d.message.includes('^0.2.0')),
     fixture.diagnostics.map(d => d.message).join(' | ')
 );
 check(
     'accepts a dependency inside the declared range',
-    !fixture.diagnostics.some(d => d.pluginId === 'bruce.uses-alpha' && d.message.includes('dependency')),
+    !fixture.diagnostics.some(d => d.pluginId === 'icebox.uses-alpha' && d.message.includes('dependency')),
     fixture.diagnostics.map(d => d.message).join(' | ')
 );
 await fs.rm(path.dirname(fixtureRoot), { recursive: true, force: true });
@@ -149,14 +149,14 @@ await fs.rm(path.dirname(fixtureRoot), { recursive: true, force: true });
 console.log('shared services and events');
 const services = new PluginServiceRegistry();
 const bus = new PluginEventBus();
-services.provide('bruce.alpha', 'alpha.api', { ping: () => 'pong' });
+services.provide('icebox.alpha', 'alpha.api', { ping: () => 'pong' });
 check('a service is resolvable by id', services.get('alpha.api').ping() === 'pong');
 const received = [];
-bus.on('bruce.beta', 'workspace/selection-changed', payload => received.push(payload));
+bus.on('icebox.beta', 'workspace/selection-changed', payload => received.push(payload));
 bus.emit('workspace/selection-changed', 'file:///a.ts');
 check('an event reaches a listener registered by another owner', received.length === 1);
-services.removeByOwner('bruce.alpha');
-bus.removeByOwner('bruce.beta');
+services.removeByOwner('icebox.alpha');
+bus.removeByOwner('icebox.beta');
 check('unloading an owner removes its services', !services.has('alpha.api'));
 bus.emit('workspace/selection-changed', 'file:///b.ts');
 check('unloading an owner removes its listeners', received.length === 1);
@@ -164,30 +164,30 @@ check('unloading an owner removes its listeners', received.length === 1);
 console.log('host panel capabilities');
 check(
     'the terminal capability is a stable id, not a class or module path',
-    HOST_PANEL_CAPABILITIES.terminal === 'brucede.terminal',
+    HOST_PANEL_CAPABILITIES.terminal === 'icebox.terminal',
     String(HOST_PANEL_CAPABILITIES.terminal)
 );
 check(
     'capability ids cannot look like module paths or class names',
-    HOST_PANEL_CAPABILITY_PATTERN.test('brucede.terminal')
+    HOST_PANEL_CAPABILITY_PATTERN.test('icebox.terminal')
         && !HOST_PANEL_CAPABILITY_PATTERN.test('@theia/terminal')
         && !HOST_PANEL_CAPABILITY_PATTERN.test('TerminalWidget'),
     'the capability id pattern accepted a non-capability id'
 );
 
 console.log('plugin bundles stay inside the shared-module allowlist');
-const hostModuleSpecifiers = Object.keys(HOST_MODULES).map(bare => `/brucede-host-modules/${HOST_MODULES[bare]}`);
+const hostModuleSpecifiers = Object.keys(HOST_MODULES).map(bare => `/icebox-host-modules/${HOST_MODULES[bare]}`);
 for (const plugin of discovery.plugins) {
     const id = plugin.manifest.id;
     if (!plugin.frontendEntrypoint) {
         continue;
     }
     const source = await fs.readFile(plugin.frontendEntrypoint, 'utf8');
-    const referenced = Array.from(new Set(source.match(/\/brucede-host-modules\/[A-Za-z0-9_-]+\.js/g) ?? []));
+    const referenced = Array.from(new Set(source.match(/\/icebox-host-modules\/[A-Za-z0-9_-]+\.js/g) ?? []));
     const unknown = referenced.filter(specifier => !hostModuleSpecifiers.includes(specifier));
     check(`${id}: frontend imports only allowlisted host modules`, unknown.length === 0, unknown.join(', '));
 }
-const terminalPlugin = discovery.plugins.find(plugin => plugin.manifest.id === 'bruce.terminal');
+const terminalPlugin = discovery.plugins.find(plugin => plugin.manifest.id === 'icebox.terminal');
 const terminalSource = terminalPlugin?.frontendEntrypoint
     ? await fs.readFile(terminalPlugin.frontendEntrypoint, 'utf8')
     : '';
@@ -198,7 +198,7 @@ check(
 );
 check(
     'terminal plugin adopts the host capability instead of a widget factory',
-    terminalSource.includes('/brucede-host-modules/brucede-plugin-api.js'),
+    terminalSource.includes('/icebox-host-modules/icebox-plugin-api.js'),
     'host module specifier missing'
 );
 
@@ -209,53 +209,53 @@ const duplicateSecond = { id: '', title: { label: '', caption: '' } };
 const hostRegistry = new HostPanelFactoryRegistry({
     getContributions: () => [
         {
-            capabilityId: 'brucede.terminal',
+            capabilityId: 'icebox.terminal',
             label: 'Terminal',
             createPanel: () => sampleWidget
         },
         { capabilityId: '@theia/terminal', label: 'bad', createPanel: () => sampleWidget },
         {
-            capabilityId: 'brucede.duplicate',
+            capabilityId: 'icebox.duplicate',
             label: 'first wins',
             createPanel: () => duplicateFirst
         },
         {
-            capabilityId: 'brucede.duplicate',
+            capabilityId: 'icebox.duplicate',
             label: 'second ignored',
             createPanel: () => duplicateSecond
         }
     ]
 });
-check('collects a contributed capability', hostRegistry.has('brucede.terminal'));
+check('collects a contributed capability', hostRegistry.has('icebox.terminal'));
 check(
     'ignores a contributed id that looks like a module path',
     !hostRegistry.has('@theia/terminal'),
     hostRegistry.list().map(entry => entry.capabilityId).join(', ')
 );
-const duplicatePanel = await hostRegistry.create('brucede.duplicate', {
-    capabilityId: 'brucede.duplicate',
+const duplicatePanel = await hostRegistry.create('icebox.duplicate', {
+    capabilityId: 'icebox.duplicate',
     instanceId: 'instance-duplicate'
 });
 check('keeps the first factory for a duplicated capability', duplicatePanel === duplicateFirst);
-const created = await hostRegistry.create('brucede.terminal', {
-    capabilityId: 'brucede.terminal',
+const created = await hostRegistry.create('icebox.terminal', {
+    capabilityId: 'icebox.terminal',
     instanceId: 'instance-1'
 });
 check('builds a panel through the capability', created === sampleWidget);
 try {
-    await hostRegistry.create('brucede.missing', { capabilityId: 'brucede.missing', instanceId: 'x' });
+    await hostRegistry.create('icebox.missing', { capabilityId: 'icebox.missing', instanceId: 'x' });
     check('reports an unknown capability instead of faking a panel', false);
 } catch (error) {
     check('reports an unknown capability instead of faking a panel', String(error.message).includes('not available'));
 }
 try {
-    hostRegistry.register({ capabilityId: 'brucede.other', label: 'x', createPanel: () => sampleWidget });
+    hostRegistry.register({ capabilityId: 'icebox.other', label: 'x', createPanel: () => sampleWidget });
     check('late registration validates the id shape', true);
 } catch (error) {
     check('late registration validates the id shape', false, error.message);
 }
 try {
-    hostRegistry.register({ capabilityId: 'brucede/other', label: 'x', createPanel: () => sampleWidget });
+    hostRegistry.register({ capabilityId: 'icebox/other', label: 'x', createPanel: () => sampleWidget });
     check('late registration refuses a path-like id', false);
 } catch {
     check('late registration refuses a path-like id', true);
@@ -379,7 +379,7 @@ check(
 const hostSources = await collectHostSources();
 check(
     'the host ships no demo panels or demo commands',
-    !hostSources.includes('bruce.demo.') && !hostSources.includes('WorkspaceDemoContribution'),
+    !hostSources.includes('icebox.demo.') && !hostSources.includes('WorkspaceDemoContribution'),
     'a demo contribution is still registered'
 );
 for (const app of ['electron-app', 'browser-app']) {
@@ -839,7 +839,7 @@ console.log('install and build scripts avoid Windows shims');
     check(
         'the install hook compiles the local packages',
         rootManifest.scripts?.postinstall?.includes('build:workspace-core'),
-        'npm install would leave @brucede/* unresolved'
+        'npm install would leave @icebox/* unresolved'
     );
     check(
         'the install hook reaches theia through node',
@@ -865,7 +865,7 @@ function throwsManifest(candidate) {
  * consumer inside its range, and one consumer whose range cannot be satisfied.
  */
 async function writeDependencyFixture() {
-    const base = await fs.mkdtemp(path.join(os.tmpdir(), 'brucede-verify-'));
+    const base = await fs.mkdtemp(path.join(os.tmpdir(), 'icebox-verify-'));
     const pluginsRoot = path.join(base, 'plugins');
     const writePlugin = async (folder, manifest) => {
         const directory = path.join(pluginsRoot, folder);
@@ -879,16 +879,16 @@ async function writeDependencyFixture() {
         apiVersion: 1,
         entrypoints: { frontend: './dist/frontend.js' }
     };
-    await writePlugin('alpha', { ...common, id: 'bruce.alpha' });
+    await writePlugin('alpha', { ...common, id: 'icebox.alpha' });
     await writePlugin('uses-alpha', {
         ...common,
-        id: 'bruce.uses-alpha',
-        dependencies: { 'bruce.alpha': '^0.1.0' }
+        id: 'icebox.uses-alpha',
+        dependencies: { 'icebox.alpha': '^0.1.0' }
     });
     await writePlugin('needs-newer', {
         ...common,
-        id: 'bruce.needs-newer',
-        dependencies: { 'bruce.alpha': '^0.2.0' }
+        id: 'icebox.needs-newer',
+        dependencies: { 'icebox.alpha': '^0.2.0' }
     });
     return pluginsRoot;
 }

@@ -36,7 +36,7 @@ export interface GitStatus {
 /**
  * Provided by the backend half under `git.repository`.
  *
- * Ids come from `@brucede/plugin-api` (`WORKSPACE_SERVICE_IDS.gitRepository`),
+ * Ids come from `@icebox/plugin-api` (`WORKSPACE_SERVICE_IDS.gitRepository`),
  * so another plugin can consume this without importing the implementation.
  */
 export interface GitRepositoryService {

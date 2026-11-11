@@ -1,9 +1,9 @@
 {
-  "name": "@brucede/plugin-api",
+  "name": "@icebox/plugin-api",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Versioned public API contracts for trusted native BruceDE plugins.",
+  "description": "Versioned public API contracts for trusted native Icebox plugins.",
   "main": "./lib/index.js",
   "types": "./lib/index.d.ts",
   "exports": {

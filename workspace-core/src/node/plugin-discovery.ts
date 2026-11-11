@@ -1,8 +1,8 @@
 import { promises as fs } from 'fs';
 import * as path from 'path';
-import type { PluginManifest } from '@brucede/plugin-api';
-import { BRUCE_WORKSPACE_PLUGIN_ID } from '@brucede/plugin-api';
-import { PluginManifestError, satisfiesVersion, validatePluginManifest } from '@brucede/plugin-runtime';
+import type { PluginManifest } from '@icebox/plugin-api';
+import { ICEBOX_WORKSPACE_PLUGIN_ID } from '@icebox/plugin-api';
+import { PluginManifestError, satisfiesVersion, validatePluginManifest } from '@icebox/plugin-runtime';
 import {
     PLUGIN_ASSET_PREFIX,
     type PluginDescriptor,
@@ -108,7 +108,7 @@ export async function discoverPlugins(roots: readonly string[]): Promise<Discove
 /** True when a plugin folder lives in the per-user plugin directory. */
 export function isUserPluginPath(directory: string): boolean {
     const normalized = directory.replace(/\\/g, '/');
-    return normalized.includes('/.brucede/');
+    return normalized.includes('/.icebox/');
 }
 
 async function resolveEntrypoints(
@@ -156,7 +156,7 @@ async function resolveEntrypoints(
  * Reports dependency ids that no discovered plugin satisfies, or that resolve
  * to a plugin version outside the declared range.
  *
- * The host workspace (`bruce.workspace`) is a first-class service, not a
+ * The host workspace (`icebox.workspace`) is a first-class service, not a
  * plugin, so it is always considered available. A plugin with an unsatisfied
  * dependency is still exposed so the manager can show the problem instead of
  * silently dropping it.
@@ -168,7 +168,7 @@ function resolveCrossDependencies(
     const byId = new Map<string, DiscoveredPlugin>(plugins.map(plugin => [plugin.manifest.id, plugin]));
     for (const plugin of plugins) {
         for (const [dependencyId, range] of Object.entries(plugin.manifest.dependencies ?? {})) {
-            if (dependencyId === BRUCE_WORKSPACE_PLUGIN_ID) {
+            if (dependencyId === ICEBOX_WORKSPACE_PLUGIN_ID) {
                 continue;
             }
             const dependency = byId.get(dependencyId);

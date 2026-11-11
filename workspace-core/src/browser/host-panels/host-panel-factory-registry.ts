@@ -1,18 +1,18 @@
 import { inject, injectable, named } from '@theia/core/shared/inversify';
 import { ContributionProvider } from '@theia/core/lib/common/contribution-provider';
 import type { Widget } from '@lumino/widgets';
-import { HOST_PANEL_CAPABILITIES } from '@brucede/plugin-api';
+import { HOST_PANEL_CAPABILITIES } from '@icebox/plugin-api';
 
 /**
  * Shape a capability id must have: lower-case, dot-separated, at least one dot
- * (`brucede.terminal`). Deliberately *not* a module path or a class name — the
+ * (`icebox.terminal`). Deliberately *not* a module path or a class name — the
  * id names a host capability, not an implementation.
  */
 export const HOST_PANEL_CAPABILITY_PATTERN = /^[a-z][a-z0-9]*(\.[a-z0-9]+)+$/;
 
 /** Everything a host panel factory is told when it builds one panel. */
 export interface HostPanelCreateRequest {
-    /** The capability that is being created, e.g. `brucede.terminal`. */
+    /** The capability that is being created, e.g. `icebox.terminal`. */
     readonly capabilityId: string;
     /** Stable instance id, used for titles and per-instance bookkeeping. */
     readonly instanceId: string;

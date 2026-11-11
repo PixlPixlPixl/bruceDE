@@ -5,8 +5,8 @@ import type {
     PanelState,
     ResourceStat,
     WorkspaceResourcesService
-} from '@brucede/plugin-api';
-import { WORKSPACE_SERVICE_IDS } from '@brucede/plugin-api';
+} from '@icebox/plugin-api';
+import { WORKSPACE_SERVICE_IDS } from '@icebox/plugin-api';
 import type {
     AgentCommand,
     AgentDescriptor,
@@ -16,7 +16,7 @@ import type {
 } from '../shared.js';
 
 const PANEL_CHAT = 'agent-chat.conversation';
-const COMMAND_OPEN = 'bruce.agent-chat.open';
+const COMMAND_OPEN = 'icebox.agent-chat.open';
 const POLL_INTERVAL_MS = 700;
 /** Rows offered by one search before the user has narrowed it down. */
 const MODEL_ROWS = 40;

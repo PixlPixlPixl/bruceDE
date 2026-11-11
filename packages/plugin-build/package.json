@@ -1,11 +1,11 @@
 {
-  "name": "@brucede/plugin-build",
+  "name": "@icebox/plugin-build",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "esbuild-based bundler for BruceDE plugin frontend/backend entrypoints.",
+  "description": "esbuild-based bundler for Icebox plugin frontend/backend entrypoints.",
   "bin": {
-    "bruce-plugin-build": "./build.mjs"
+    "icebox-plugin-build": "./build.mjs"
   },
   "dependencies": {
     "esbuild": "^0.28.2"

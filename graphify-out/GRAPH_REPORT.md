@@ -1,4 +1,4 @@
-# Graph Report - bruceDE  (2026-11-10)
+# Graph Report - Icebox  (2026-11-10)
 
 ## Corpus Check
 - 58 files · ~48,074 words
@@ -116,9 +116,9 @@
   README.md → workspace-core/src/browser/workspace-panel-factory.ts
 - `Trust and Enabled State Store` --references--> `PluginStateStore`  [EXTRACTED]
   plugins/AGENTS.md → workspace-core/src/node/plugin-state-store.ts
-- `@brucede/plugin-api@0.1.0` --declares--> `@brucede/plugin-api`  [EXTRACTED]
+- `@icebox/plugin-api@0.1.0` --declares--> `@icebox/plugin-api`  [EXTRACTED]
   packages/plugin-runtime/package.json → plugins/git/package.json
-- `@brucede/plugin-api@0.1.0` --declares--> `@brucede/plugin-api`  [EXTRACTED]
+- `@icebox/plugin-api@0.1.0` --declares--> `@icebox/plugin-api`  [EXTRACTED]
   workspace-core/package.json → plugins/git/package.json
 
 ## Import Cycles
@@ -181,7 +181,7 @@ Nodes (8): sameRanges(), sameSelection(), WorkspaceSelectionService, EventListen
 
 ### Community 12 - "Plugin API Contracts"
 Cohesion: 0.08
-Nodes (25): BRUCE_PLUGIN_API_VERSION, BRUCE_WORKSPACE_PLUGIN_ID, CommandDefinition, DockMode, HostPanelCapabilityId, HostPanelRegistration, PanelDefinition, PanelOpenOptions (+17 more)
+Nodes (25): ICEBOX_PLUGIN_API_VERSION, ICEBOX_WORKSPACE_PLUGIN_ID, CommandDefinition, DockMode, HostPanelCapabilityId, HostPanelRegistration, PanelDefinition, PanelOpenOptions (+17 more)
 
 ### Community 14 - "Theia App Dependencies"
 Cohesion: 0.10
@@ -209,7 +209,7 @@ Nodes (12): AgentIntrospection, LiveSession, ModelMenuProps, AgentCommand, Agent
 
 ### Community 20 - "Git Package Metadata"
 Cohesion: 0.12
-Nodes (19): @brucede/plugin-api@0.1.0, @brucede/ui-kit@0.1.0, @brucede/plugin-api@0.1.0, @brucede/ui-kit@0.1.0, description, devDependencies, @brucede/plugin-build@0.1.0, @brucede/plugin-api (+11 more)
+Nodes (19): @icebox/plugin-api@0.1.0, @icebox/ui-kit@0.1.0, @icebox/plugin-api@0.1.0, @icebox/ui-kit@0.1.0, description, devDependencies, @icebox/plugin-build@0.1.0, @icebox/plugin-api (+11 more)
 
 ### Community 22 - "Workspace Shell And Panels"
 Cohesion: 0.21
@@ -237,15 +237,15 @@ Nodes (15): dependencies, @lumino/widgets@2.7.5, react@^19.3.1, description, exp
 
 ### Community 28 - "Agent Chat Package Metadata"
 Cohesion: 0.15
-Nodes (15): description, devDependencies, @brucede/plugin-build@0.1.0, @brucede/plugin-api, @brucede/plugin-build, @brucede/ui-kit, name, peerDependencies (+7 more)
+Nodes (15): description, devDependencies, @icebox/plugin-build@0.1.0, @icebox/plugin-api, @icebox/plugin-build, @icebox/ui-kit, name, peerDependencies (+7 more)
 
 ### Community 30 - "File Browser Package Metadata"
 Cohesion: 0.15
-Nodes (15): description, devDependencies, @brucede/plugin-build@0.1.0, @brucede/plugin-api, @brucede/plugin-build, @brucede/ui-kit, name, peerDependencies (+7 more)
+Nodes (15): description, devDependencies, @icebox/plugin-build@0.1.0, @icebox/plugin-api, @icebox/plugin-build, @icebox/ui-kit, name, peerDependencies (+7 more)
 
 ### Community 31 - "Terminal Package Metadata"
 Cohesion: 0.15
-Nodes (15): description, devDependencies, @brucede/plugin-build@0.1.0, @brucede/plugin-api, @brucede/plugin-build, @brucede/ui-kit, name, peerDependencies (+7 more)
+Nodes (15): description, devDependencies, @icebox/plugin-build@0.1.0, @icebox/plugin-api, @icebox/plugin-build, @icebox/ui-kit, name, peerDependencies (+7 more)
 
 ### Community 32 - "Workspace Core TypeScript Config"
 Cohesion: 0.12
@@ -253,7 +253,7 @@ Nodes (15): compilerOptions, declaration, emitDecoratorMetadata, experimentalDec
 
 ### Community 34 - "File Browser Manifest"
 Cohesion: 0.13
-Nodes (14): apiVersion, contributes, commands, panels, services, dependencies, bruce.workspace@^0.1.0, description (+6 more)
+Nodes (14): apiVersion, contributes, commands, panels, services, dependencies, icebox.workspace@^0.1.0, description (+6 more)
 
 ### Community 35 - "Backend Host And State Store"
 Cohesion: 0.20
@@ -277,7 +277,7 @@ Nodes (3): Trust and Enabled State Store, isPersistedShape(), PluginStateStore
 
 ### Community 40 - "Terminal Manifest"
 Cohesion: 0.14
-Nodes (13): apiVersion, contributes, commands, panels, dependencies, bruce.workspace@^0.1.0, description, entrypoints (+5 more)
+Nodes (13): apiVersion, contributes, commands, panels, dependencies, icebox.workspace@^0.1.0, description, entrypoints (+5 more)
 
 ### Community 41 - "Canvas Shell Layout"
 Cohesion: 0.17
@@ -293,7 +293,7 @@ Nodes (12): description, files, keywords, main, name, private, scripts, build (+
 
 ### Community 44 - "UI Kit Package Metadata"
 Cohesion: 0.17
-Nodes (12): description, exports, ./package.json, ./theme.css, files, @brucede/plugin-api, name, peerDependencies (+4 more)
+Nodes (12): description, exports, ./package.json, ./theme.css, files, @icebox/plugin-api, name, peerDependencies (+4 more)
 
 ### Community 45 - "Agent Chat Panel UI"
 Cohesion: 0.19
@@ -305,11 +305,11 @@ Nodes (11): workspace-core@0.1.0, workspace-core, workspace-core@0.1.0, devDepen
 
 ### Community 47 - "Theia Terminal Dependencies"
 Cohesion: 0.18
-Nodes (11): @theia/core@1.77.0, @theia/terminal@1.77.0, @theia/core, @theia/terminal, @theia/core@1.77.0, @theia/terminal@1.77.0, dependencies, @brucede/plugin-api@0.1.0 (+3 more)
+Nodes (11): @theia/core@1.77.0, @theia/terminal@1.77.0, @theia/core, @theia/terminal, @theia/core@1.77.0, @theia/terminal@1.77.0, dependencies, @icebox/plugin-api@0.1.0 (+3 more)
 
 ### Community 49 - "Git Manifest"
 Cohesion: 0.18
-Nodes (10): apiVersion, dependencies, bruce.workspace@^0.1.0, description, entrypoints, backend, frontend, id (+2 more)
+Nodes (10): apiVersion, dependencies, icebox.workspace@^0.1.0, description, entrypoints, backend, frontend, id (+2 more)
 
 ### Community 50 - "Discovery And Manifest Rules"
 Cohesion: 0.20
@@ -333,7 +333,7 @@ Nodes (9): devDependencies, @types/react@^19.3.0, typescript@5.9.3, devDependenc
 
 ### Community 55 - "Agent Chat Manifest"
 Cohesion: 0.25
-Nodes (8): apiVersion, dependencies, bruce.workspace@^0.1.0, description, id, name, version, bruce.workspace
+Nodes (8): apiVersion, dependencies, icebox.workspace@^0.1.0, description, id, name, version, icebox.workspace
 
 ### Community 56 - "Plugin Host Client RPC"
 Cohesion: 0.28
@@ -365,11 +365,11 @@ Nodes (6): scripts, bundle, rebuild, start, watch, Browser Target Port and Hostn
 
 ### Community 65 - "Cordis Loader Dependencies"
 Cohesion: 0.33
-Nodes (5): dependencies, @brucede/plugin-api@0.1.0, @deepseek-ai/cordis@4.1.0, @deepseek-ai/cordis-plugin-loader@1.1.0, @deepseek-ai/cordis-plugin-loader
+Nodes (5): dependencies, @icebox/plugin-api@0.1.0, @deepseek-ai/cordis@4.1.0, @deepseek-ai/cordis-plugin-loader@1.1.0, @deepseek-ai/cordis-plugin-loader
 
 ### Community 67 - "Plugin Runtime Peer Deps"
 Cohesion: 0.50
-Nodes (4): @brucede/plugin-runtime@0.1.0, @brucede/plugin-runtime, @brucede/plugin-runtime@0.1.0, @brucede/plugin-runtime@0.1.0
+Nodes (4): @icebox/plugin-runtime@0.1.0, @icebox/plugin-runtime, @icebox/plugin-runtime@0.1.0, @icebox/plugin-runtime@0.1.0
 
 ### Community 68 - "Theia Filesystem Deps"
 Cohesion: 0.50
@@ -421,7 +421,7 @@ _Questions this graph is uniquely positioned to answer:_
   _High betweenness centrality (0.086) - this node is a cross-community bridge._
 - **Should `Git Plugin` be split into smaller, more focused modules?**
   _Cohesion score 0.06475485661424607 - nodes in this community are weakly interconnected._
-- **Why does `@brucede/plugin-api` connect `Git Package Metadata` to `Cordis Loader Dependencies`, `Workspace Core Package Metadata`, `Plugin Runtime Package Metadata`, `Electron App Metadata`, `Theia Terminal Dependencies`, `Browser App Dependencies`?**
+- **Why does `@icebox/plugin-api` connect `Git Package Metadata` to `Cordis Loader Dependencies`, `Workspace Core Package Metadata`, `Plugin Runtime Package Metadata`, `Electron App Metadata`, `Theia Terminal Dependencies`, `Browser App Dependencies`?**
   _High betweenness centrality (0.062) - this node is a cross-community bridge._
 - **Should `Host Panel Capabilities` be split into smaller, more focused modules?**
   _Cohesion score 0.057004830917874394 - nodes in this community are weakly interconnected._

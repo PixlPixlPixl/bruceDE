@@ -1,4 +1,4 @@
-import type { PluginDisposer } from '@brucede/plugin-api';
+import type { PluginDisposer } from '@icebox/plugin-api';
 
 /**
  * Owner-keyed registries shared by every plugin on one side of the RPC boundary.

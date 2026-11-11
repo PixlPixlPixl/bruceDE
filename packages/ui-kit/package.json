@@ -1,15 +1,15 @@
 {
-  "name": "@brucede/ui-kit",
+  "name": "@icebox/ui-kit",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Optional shared visual primitives and theme tokens for BruceDE plugins.",
+  "description": "Optional shared visual primitives and theme tokens for Icebox plugins.",
   "exports": {
     "./theme.css": "./src/theme.css",
     "./package.json": "./package.json"
   },
   "files": ["src"],
   "peerDependencies": {
-    "@brucede/plugin-api": "0.1.0"
+    "@icebox/plugin-api": "0.1.0"
   }
 }

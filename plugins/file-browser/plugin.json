@@ -1,5 +1,5 @@
 {
-    "id": "bruce.file-browser",
+    "id": "icebox.file-browser",
     "name": "File Browser",
     "version": "0.1.0",
     "apiVersion": 1,
@@ -9,7 +9,7 @@
         "backend": "./dist/backend.js"
     },
     "dependencies": {
-        "bruce.workspace": "^0.1.0"
+        "icebox.workspace": "^0.1.0"
     },
     "contributes": {
         "panels": [
@@ -20,7 +20,7 @@
         ],
         "commands": [
             {
-                "id": "bruce.file-browser.open",
+                "id": "icebox.file-browser.open",
                 "title": "Files: Open Browser"
             }
         ],

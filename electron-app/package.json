@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "main": "lib/backend/electron-main.js",
   "dependencies": {
-    "@brucede/plugin-api": "0.1.0",
-    "@brucede/plugin-runtime": "0.1.0",
-    "@brucede/ui-kit": "0.1.0",
+    "@icebox/plugin-api": "0.1.0",
+    "@icebox/plugin-runtime": "0.1.0",
+    "@icebox/ui-kit": "0.1.0",
     "@theia/core": "1.77.0",
     "@theia/editor": "1.77.0",
     "@theia/electron": "1.77.0",
@@ -36,6 +36,7 @@
     "target": "electron",
     "frontend": {
       "config": {
+        "applicationName": "Icebox",
         "defaultTheme": "dark",
         "preferences": {
           "workbench.colorTheme": "dark"

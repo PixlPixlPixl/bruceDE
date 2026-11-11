@@ -1,6 +1,6 @@
-# @brucede/plugin-runtime
+# @icebox/plugin-runtime
 
-Cordis is the lifecycle engine for trusted native BruceDE plugins.
+Cordis is the lifecycle engine for trusted native Icebox plugins.
 
 ## What is here
 
@@ -11,7 +11,7 @@ Cordis is the lifecycle engine for trusted native BruceDE plugins.
 - `Context` and `Fiber` are re-exported from Cordis core for host code.
 
 ```ts
-import { CordisPluginManager } from '@brucede/plugin-runtime';
+import { CordisPluginManager } from '@icebox/plugin-runtime';
 
 const manager = new CordisPluginManager<FrontendPluginAPI>({ onError });
 await manager.load({
@@ -24,11 +24,11 @@ await manager.unload(manifest.id); // disposes the fiber and its effects
 
 ## Boundaries
 
-- Import `@brucede/plugin-runtime` for Cordis core in either host context.
-- Import `@brucede/plugin-runtime/loader` only from the Theia Node backend.
+- Import `@icebox/plugin-runtime` for Cordis core in either host context.
+- Import `@icebox/plugin-runtime/loader` only from the Theia Node backend.
 - The renderer-side module loading (fetching and importing ESM bundles, host-module shims) lives in `workspace-core`, not here: it is Theia-specific.
 
-Cordis manages lifecycle and dependencies; the BruceDE host adapts Cordis contexts to `@brucede/plugin-api`, panel registration, Theia RPC, and panel ownership. Cordis does not sandbox plugins or guarantee that ESM module records are removed from memory after disposal.
+Cordis manages lifecycle and dependencies; the Icebox host adapts Cordis contexts to `@icebox/plugin-api`, panel registration, Theia RPC, and panel ownership. Cordis does not sandbox plugins or guarantee that ESM module records are removed from memory after disposal.
 
 ## Verification
 

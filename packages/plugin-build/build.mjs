@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Bundles one BruceDE plugin folder into the ESM entrypoints declared in its
+ * Bundles one Icebox plugin folder into the ESM entrypoints declared in its
  * `plugin.json`.
  *
  * Frontend bundles keep the shared host modules external as
- * `/brucede-host-modules/<file>.js` specifiers; the renderer rewrites those to
+ * `/icebox-host-modules/<file>.js` specifiers; the renderer rewrites those to
  * blob URLs backed by its own React/Lumino instances at load time. Backend
  * bundles are self-contained ESM for the normal Node backend.
  *
@@ -15,7 +15,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const HOST_MODULE_PREFIX = '/brucede-host-modules';
+const HOST_MODULE_PREFIX = '/icebox-host-modules';
 const HOST_MODULES = {
     react: 'react.js',
     'react/jsx-runtime': 'react-jsx-runtime.js',
@@ -29,7 +29,7 @@ const HOST_MODULES = {
     '@theia/core/lib/browser': 'theia-core-browser.js',
     '@theia/core/lib/common': 'theia-core-common.js',
     '@theia/core/lib/browser/widgets/react-widget': 'theia-react-widget.js',
-    '@brucede/plugin-api': 'brucede-plugin-api.js'
+    '@icebox/plugin-api': 'icebox-plugin-api.js'
 };
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));

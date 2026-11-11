@@ -14,8 +14,8 @@ import * as styles from './plugin-manager-styles.js';
  */
 @injectable()
 export class PluginManagerWidget extends ReactWidget {
-    static readonly ID = 'bruce.plugin-manager';
-    static readonly LABEL = nls.localize('brucede/pluginManager', 'Plugins');
+    static readonly ID = 'icebox.plugin-manager';
+    static readonly LABEL = nls.localize('icebox/pluginManager', 'Plugins');
 
     protected snapshot: PluginHostSnapshot | undefined;
     protected unsubscribe: (() => void) | undefined;
@@ -31,7 +31,7 @@ export class PluginManagerWidget extends ReactWidget {
         this.title.label = PluginManagerWidget.LABEL;
         this.title.caption = PluginManagerWidget.LABEL;
         this.title.closable = true;
-        this.addClass('bruce-plugin-manager');
+        this.addClass('icebox-plugin-manager');
     }
 
     protected override onAfterAttach(): void {

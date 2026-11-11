@@ -1,17 +1,17 @@
 {
-  "name": "@brucede/plugin-file-browser",
+  "name": "@icebox/plugin-file-browser",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "User-controlled file and directory browser panels.",
   "peerDependencies": {
-    "@brucede/plugin-api": "0.1.0",
-    "@brucede/ui-kit": "0.1.0"
+    "@icebox/plugin-api": "0.1.0",
+    "@icebox/ui-kit": "0.1.0"
   },
   "scripts": {
     "build": "node ../../packages/plugin-build/build.mjs ."
   },
   "devDependencies": {
-    "@brucede/plugin-build": "0.1.0"
+    "@icebox/plugin-build": "0.1.0"
   }
 }

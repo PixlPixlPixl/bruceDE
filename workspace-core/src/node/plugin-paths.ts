@@ -2,21 +2,21 @@ import { promises as fs } from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-/** Directory name under the user's home where BruceDE keeps plugin state. */
-export const USER_DATA_DIR_NAME = '.brucede';
+/** Directory name under the user's home where Icebox keeps plugin state. */
+export const USER_DATA_DIR_NAME = '.icebox';
 
 /**
  * Resolves the directories scanned for `plugin.json`.
  *
- * Built-in plugins ship inside the BruceDE checkout/installation; user-installed
+ * Built-in plugins ship inside the Icebox checkout/installation; user-installed
  * plugins live in the per-user data directory. An explicit
- * `BRUCEDE_PLUGINS_DIR` environment variable takes precedence over both, which
+ * `ICEBOX_PLUGINS_DIR` environment variable takes precedence over both, which
  * is what development and packaging use to point at a prepared folder.
  */
 export async function resolvePluginRoots(appPath: string): Promise<string[]> {
     const candidates: string[] = [];
 
-    const override = process.env.BRUCEDE_PLUGINS_DIR;
+    const override = process.env.ICEBOX_PLUGINS_DIR;
     if (override && override.trim().length > 0) {
         candidates.push(path.resolve(override.trim()));
     }
@@ -50,7 +50,7 @@ export async function resolvePluginRoots(appPath: string): Promise<string[]> {
 
 /** Location of the persisted plugin state file. */
 export function resolveStateFile(): string {
-    const override = process.env.BRUCEDE_STATE_DIR;
+    const override = process.env.ICEBOX_STATE_DIR;
     const base = override && override.trim().length > 0
         ? path.resolve(override.trim())
         : path.join(os.homedir(), USER_DATA_DIR_NAME);

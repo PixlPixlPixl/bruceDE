@@ -1,12 +1,12 @@
 import { inject, injectable } from '@theia/core/shared/inversify';
 import {
-    BRUCE_WORKSPACE_PLUGIN_ID,
+    ICEBOX_WORKSPACE_PLUGIN_ID,
     WORKSPACE_EVENT_IDS,
     WORKSPACE_SERVICE_IDS,
     type PluginDisposer,
     type ResourceSelection,
     type WorkspaceSelectionService as WorkspaceSelectionContract
-} from '@brucede/plugin-api';
+} from '@icebox/plugin-api';
 import { PluginEventBus, PluginServiceRegistry } from '../common/plugin-registries.js';
 
 /**
@@ -30,7 +30,7 @@ export class WorkspaceSelectionService implements WorkspaceSelectionContract {
 
     /** Publishes the service under the host's owner id. */
     install(): PluginDisposer {
-        return this.services.provide(BRUCE_WORKSPACE_PLUGIN_ID, WORKSPACE_SERVICE_IDS.selection, this);
+        return this.services.provide(ICEBOX_WORKSPACE_PLUGIN_ID, WORKSPACE_SERVICE_IDS.selection, this);
     }
 
     get(): ResourceSelection | undefined {

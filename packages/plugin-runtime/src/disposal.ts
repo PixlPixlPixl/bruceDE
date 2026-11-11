@@ -1,4 +1,4 @@
-import type { PluginDisposer } from '@brucede/plugin-api';
+import type { PluginDisposer } from '@icebox/plugin-api';
 
 /**
  * Runs registered disposers in reverse order, exactly once, even when one of

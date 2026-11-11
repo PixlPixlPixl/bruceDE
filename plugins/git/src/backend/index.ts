@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { BackendPluginAPI } from '@brucede/plugin-api';
-import { WORKSPACE_SERVICE_IDS } from '@brucede/plugin-api';
+import type { BackendPluginAPI } from '@icebox/plugin-api';
+import { WORKSPACE_SERVICE_IDS } from '@icebox/plugin-api';
 import type { GitChange, GitRepositoryService, GitStatus } from '../shared.js';
 
 const run = promisify(execFile);

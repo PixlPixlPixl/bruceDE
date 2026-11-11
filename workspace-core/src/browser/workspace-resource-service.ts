@@ -3,7 +3,7 @@ import { URI } from '@theia/core/lib/common/uri';
 import { FileService } from '@theia/filesystem/lib/browser/file-service';
 import type { FileStat } from '@theia/filesystem/lib/common/files';
 import {
-    BRUCE_WORKSPACE_PLUGIN_ID,
+    ICEBOX_WORKSPACE_PLUGIN_ID,
     WORKSPACE_SERVICE_IDS,
     type PluginDisposer,
     type ResourceKind,
@@ -11,7 +11,7 @@ import {
     type ResourceStat,
     type ResourceUri,
     type WorkspaceResourcesService
-} from '@brucede/plugin-api';
+} from '@icebox/plugin-api';
 import { PluginServiceRegistry } from '../common/plugin-registries.js';
 
 /**
@@ -31,7 +31,7 @@ export class WorkspaceResourceService implements WorkspaceResourcesService {
 
     /** Publishes the service under the host's owner id. */
     install(): PluginDisposer {
-        return this.services.provide(BRUCE_WORKSPACE_PLUGIN_ID, WORKSPACE_SERVICE_IDS.resources, this);
+        return this.services.provide(ICEBOX_WORKSPACE_PLUGIN_ID, WORKSPACE_SERVICE_IDS.resources, this);
     }
 
     fromPath(absolutePath: string): ResourceUri {

@@ -174,7 +174,7 @@ export class PluginHostBackendService implements BackendApplicationContribution,
     }
 
     /**
-     * Built-in plugins start enabled: they ship with BruceDE and the user can
+     * Built-in plugins start enabled: they ship with Icebox and the user can
      * still disable them. Third-party plugins stay off until the user accepts
      * the full-system-access warning and opts in.
      */
@@ -191,7 +191,7 @@ export class PluginHostBackendService implements BackendApplicationContribution,
         if (!plugin) {
             return false;
         }
-        // Built-in plugins ship with BruceDE; only third-party code needs a
+        // Built-in plugins ship with Icebox; only third-party code needs a
         // user decision.
         return !isUserPluginPath(plugin.directory) || this.state.isTrusted(pluginId);
     }

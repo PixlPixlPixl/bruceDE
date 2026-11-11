@@ -6,11 +6,11 @@ import type {
     ResourceUri,
     WorkspaceResourcesService,
     WorkspaceSelectionService
-} from '@brucede/plugin-api';
+} from '@icebox/plugin-api';
 import { FILE_ROOTS_SERVICE, type FileRootsService } from '../shared.js';
 
 const PANEL_FILES = 'files.browser';
-const COMMAND_OPEN = 'bruce.file-browser.open';
+const COMMAND_OPEN = 'icebox.file-browser.open';
 
 /** One row of the current folder. */
 interface Entry {
@@ -300,7 +300,7 @@ function separatorOf(path: string): string {
 /**
  * Parent of a path, or `undefined` at the filesystem root.
  *
- * `/home/bruce` → `/home`, `C:\Users\bruce` → `C:\Users`, and `/` or `C:\` has no
+ * `/home/user` → `/home`, `C:\Users\user` → `C:\Users`, and `/` or `C:\` has no
  * parent to climb to.
  */
 export function parentPath(path: string): string | undefined {

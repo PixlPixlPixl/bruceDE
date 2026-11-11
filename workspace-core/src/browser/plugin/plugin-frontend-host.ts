@@ -1,7 +1,7 @@
-import { CordisPluginManager, type PluginRuntimeRecord } from '@brucede/plugin-runtime';
-import type { FrontendPluginAPI, PluginManifest } from '@brucede/plugin-api';
+import { CordisPluginManager, type PluginRuntimeRecord } from '@icebox/plugin-runtime';
+import type { FrontendPluginAPI, PluginManifest } from '@icebox/plugin-api';
 import type { PluginDescriptor } from '../../common/plugin-host-protocol.js';
-import type { DisposerBag } from '@brucede/plugin-runtime';
+import type { DisposerBag } from '@icebox/plugin-runtime';
 import { WorkspaceDockingService } from '../workspace-docking-service.js';
 import { HostModuleRegistry, rewriteHostModuleSpecifiers } from './host-modules.js';
 import { PluginKernel, type PluginKernelOptions } from './plugin-kernel.js';

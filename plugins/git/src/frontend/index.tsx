@@ -4,12 +4,12 @@ import type {
     PanelHostTools,
     WorkspaceResourcesService,
     WorkspaceSelectionService
-} from '@brucede/plugin-api';
-import { WORKSPACE_EVENT_IDS, WORKSPACE_SERVICE_IDS } from '@brucede/plugin-api';
+} from '@icebox/plugin-api';
+import { WORKSPACE_EVENT_IDS, WORKSPACE_SERVICE_IDS } from '@icebox/plugin-api';
 import type { GitChange, GitRepositoryService, GitStatus } from '../shared.js';
 
 const PANEL_GIT = 'git.changes';
-const COMMAND_OPEN = 'bruce.git.open';
+const COMMAND_OPEN = 'icebox.git.open';
 
 /**
  * Native renderer entrypoint for the Git panel.

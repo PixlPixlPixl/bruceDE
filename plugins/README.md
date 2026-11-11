@@ -4,7 +4,7 @@ Agent instructions for adding a plugin live in [AGENTS.md](./AGENTS.md). Read it
 before writing code here; it covers the manifest, build, `activate(api)` contract,
 and the rules that keep a plugin self-contained.
 
-Each child folder is a self-contained feature package. A plugin owns its manifest, package metadata, frontend/backend source, assets, and built ESM bundles. Development copies live in this repository; user-installed copies live in `~/.brucede/plugins`.
+Each child folder is a self-contained feature package. A plugin owns its manifest, package metadata, frontend/backend source, assets, and built ESM bundles. Development copies live in this repository; user-installed copies live in `~/.icebox/plugins`.
 
 All plugins are trusted native code. Frontend code runs in the normal Theia renderer and backend code in the normal Node backend. There is no plugin sandbox or per-plugin worker. The plugin manager displays and requires acceptance of the full-system-access warning before enabling third-party plugins.
 
@@ -35,7 +35,7 @@ npm run build:plugins
 - `api.panels.register({ id, title, createWidget })` — registers a panel **type**. `createWidget` receives `(instanceId, host)` where `host.React`, `host.widgets`, and `host.createReactWidget` are the host's own instances. Do not import React or Lumino directly: use `host` so widgets are the same classes the shell docks.
 - `api.panels.open(panelId)` / `api.panels.close(instanceId)` — opens/closes a panel in the shared main area. The host closes every instance a plugin opened when it unloads.
 - `api.commands.register({ id, title, execute })` — registers a Theia command.
-- `api.panels.registerHostPanel({ id, title, capabilityId })` — registers a panel the host builds, for native functionality you must not reimplement. `api.panels.hasHostCapability(id)` reports whether this build exposes it. Capability ids (`brucede.terminal`) are stable host contracts, never import paths or Theia class names; you never receive a raw host widget or the DI container.
+- `api.panels.registerHostPanel({ id, title, capabilityId })` — registers a panel the host builds, for native functionality you must not reimplement. `api.panels.hasHostCapability(id)` reports whether this build exposes it. Capability ids (`icebox.terminal`) are stable host contracts, never import paths or Theia class names; you never receive a raw host widget or the DI container.
 - `api.services.provide/get/has` — shared services on the plugin's own side of the boundary. One registry per side, keyed by owner; a plugin can consume another plugin's service and unloading the provider removes exactly its own entries.
 - `api.services.remote<T>(serviceId)` — a renderer plugin's typed view of a service a **backend** plugin provided. Each method call becomes one RPC call over Theia's existing channel, so arguments and results must be JSON-serializable. Calling it from a backend plugin throws; backend plugins use `get` in-process.
 - `api.events.on/emit` — typed events, also shared per side.
@@ -45,7 +45,7 @@ Returning a disposer from `activate` is optional; the host disposes everything t
 
 ## Host services
 
-Before any plugin activates, the host provides `workspace.resources` and `workspace.selection` under the `bruce.workspace` owner. Use them instead of reimplementing them:
+Before any plugin activates, the host provides `workspace.resources` and `workspace.selection` under the `icebox.workspace` owner. Use them instead of reimplementing them:
 
 ```ts
 const resources = api.services.get<WorkspaceResourcesService>(WORKSPACE_SERVICE_IDS.resources);
@@ -69,12 +69,12 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
 
 ```json
 {
-  "id": "bruce.terminal",
+  "id": "icebox.terminal",
   "name": "Terminal",
   "version": "0.1.0",
   "apiVersion": 1,
   "entrypoints": { "frontend": "./dist/frontend.js", "backend": "./dist/backend.js" },
-  "dependencies": { "bruce.workspace": "^0.1.0" },
+  "dependencies": { "icebox.workspace": "^0.1.0" },
   "contributes": { "panels": [{ "id": "terminal.main", "title": "Terminal" }] }
 }
 ```
@@ -83,7 +83,7 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
 
 ## Current plugins
 
-- **File Browser** (`bruce.file-browser`) — folder listing over the host's
+- **File Browser** (`icebox.file-browser`) — folder listing over the host's
   `workspace.resources` service, publishes selections through
   `workspace.selection`. Its backend half provides `files.roots`, which starts at
   the user's home folder (`~`) rather than the directory the app was launched
@@ -91,7 +91,7 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   the current folder with the home prefix shortened to `~`, and carry icon-only
   Refresh (`codicon codicon-refresh`, `aria-label="Refresh"`) instead of text.
   Clicking a folder descends into it; clicking a file selects it.
-- **Git** (`bruce.git`) — backend half runs `git status --porcelain=v2` and
+- **Git** (`icebox.git`) — backend half runs `git status --porcelain=v2` and
   `git diff HEAD --numstat -z` in the user's work tree and provides
   `git.repository`; the panel reads it through `api.services.remote` and
   republishes `git/changes-updated` in the renderer. Each file carries its own
@@ -102,7 +102,7 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   Untracked and binary files show no counts rather than a fabricated zero.
   The header box is the same `6px 10px` as the other plugin panels, so the
   separator line matches when the panels sit side by side.
-- **Agent Chat** (`bruce.agent-chat`) — backend half drives an installed agent
+- **Agent Chat** (`icebox.agent-chat`) — backend half drives an installed agent
   CLI and provides `agent.sessions`. Two wire protocols are supported, because
   the ecosystem is not uniform:
   - `acp` — the Agent Client Protocol (JSON-RPC over stdio), used by Gemini CLI,
@@ -157,9 +157,9 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   when the protocol has a shell passthrough (Pi's `bash` command; ACP agents in
   this plugin do not).
 
-  Agents come from `BRUCEDE_AGENTS` (JSON array of
+  Agents come from `ICEBOX_AGENTS` (JSON array of
   `{ id, name, protocol?, command, args? }`, `protocol` defaults to `acp`;
-  `BRUCEDE_ACP_AGENTS` is still accepted under its old name). Without
+  `ICEBOX_ACP_AGENTS` is still accepted under its old name). Without
   configuration, the built-in catalog is a **detection list, not a roster**: Pi,
   Gemini CLI, Claude Code (ACP) and OpenCode are probed on `PATH`, and only the
   ones actually installed are offered — the panel never shows a dead entry for an
@@ -170,7 +170,7 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   `.cmd` files that cannot be passed to `CreateProcess`, so they are launched
   through the command processor explicitly while POSIX agents are spawned
   directly.
-- **Terminal** (`bruce.terminal`) — adopts the host's `brucede.terminal`
+- **Terminal** (`icebox.terminal`) — adopts the host's `icebox.terminal`
   capability through `api.panels.registerHostPanel`, so the widget is created,
   rendered, persisted and disposed by the host's own terminal code. The plugin
   bundle contains no Theia or xterm code. The built-in
@@ -179,4 +179,4 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
 
 ## Trust
 
-Built-in plugins ship with BruceDE and are trusted by definition. Any plugin discovered under `~/.brucede/plugins` is third-party code with full system access and is disabled until the user accepts the confirmation dialog in the plugin manager.
+Built-in plugins ship with Icebox and are trusted by definition. Any plugin discovered under `~/.icebox/plugins` is third-party code with full system access and is disabled until the user accepts the confirmation dialog in the plugin manager.

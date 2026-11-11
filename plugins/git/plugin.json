@@ -1,5 +1,5 @@
 {
-    "id": "bruce.git",
+    "id": "icebox.git",
     "name": "Git",
     "version": "0.1.0",
     "apiVersion": 1,
@@ -9,7 +9,7 @@
         "backend": "./dist/backend.js"
     },
     "dependencies": {
-        "bruce.workspace": "^0.1.0"
+        "icebox.workspace": "^0.1.0"
     },
     "contributes": {
         "panels": [
@@ -20,7 +20,7 @@
         ],
         "commands": [
             {
-                "id": "bruce.git.open",
+                "id": "icebox.git.open",
                 "title": "Git: Open Changes"
             }
         ],

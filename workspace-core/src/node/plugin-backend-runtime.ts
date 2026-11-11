@@ -1,6 +1,6 @@
 import { pathToFileURL } from 'url';
-import type { BackendPluginAPI, PluginManifest, RemoteService } from '@brucede/plugin-api';
-import { CordisPluginManager, type DisposerBag, type PluginRuntimeState } from '@brucede/plugin-runtime';
+import type { BackendPluginAPI, PluginManifest, RemoteService } from '@icebox/plugin-api';
+import { CordisPluginManager, type DisposerBag, type PluginRuntimeState } from '@icebox/plugin-runtime';
 import { PluginEventBus, PluginServiceRegistry } from '../common/plugin-registries.js';
 import type { DiscoveredPlugin } from './plugin-discovery.js';
 
@@ -142,7 +142,7 @@ function createBackendApi(
             },
             emit: <T>(eventName: string, payload: T) => eventBus.emit(eventName, payload)
         },
-        origin: { builtIn: !directory.includes('.brucede'), directory },
+        origin: { builtIn: !directory.includes('.icebox'), directory },
         workspace: { cwd: process.cwd(), root: process.cwd() },
         onDispose: disposer => {
             bag.add(disposer);

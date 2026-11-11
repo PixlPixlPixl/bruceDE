@@ -8,12 +8,12 @@ import { PluginManager } from './plugin-manager.js';
 import { PluginManagerWidget } from './plugin-manager-widget.js';
 
 const OPEN_PLUGIN_MANAGER: Command = {
-    id: 'bruce.plugins.openManager',
-    label: nls.localize('brucede/pluginManager', 'Plugins: Open Plugin Manager')
+    id: 'icebox.plugins.openManager',
+    label: nls.localize('icebox/pluginManager', 'Plugins: Open Plugin Manager')
 };
 
-const ENABLE_PLUGIN_PREFIX = 'bruce.plugins.enable.';
-const DISABLE_PLUGIN_PREFIX = 'bruce.plugins.disable.';
+const ENABLE_PLUGIN_PREFIX = 'icebox.plugins.enable.';
+const DISABLE_PLUGIN_PREFIX = 'icebox.plugins.disable.';
 
 /**
  * Registers the plugin manager command plus one enable/disable command per
@@ -56,7 +56,7 @@ export class PluginManagerCommands implements CommandContribution {
             if (!this.registered.has(enableId)) {
                 this.registered.add(enableId);
                 commands.registerCommand(
-                    { id: enableId, label: nls.localize('brucede/pluginManager', 'Plugins: Enable {0}', plugin.name) },
+                    { id: enableId, label: nls.localize('icebox/pluginManager', 'Plugins: Enable {0}', plugin.name) },
                     { execute: () => this.manager.setEnabled(plugin.id, true) }
                 );
             }
@@ -65,7 +65,7 @@ export class PluginManagerCommands implements CommandContribution {
                 commands.registerCommand(
                     {
                         id: disableId,
-                        label: nls.localize('brucede/pluginManager', 'Plugins: Disable {0}', plugin.name)
+                        label: nls.localize('icebox/pluginManager', 'Plugins: Disable {0}', plugin.name)
                     },
                     { execute: () => this.manager.setEnabled(plugin.id, false) }
                 );

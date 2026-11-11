@@ -12,11 +12,11 @@ import type {
     PluginDisposer,
     PluginManifest,
     RemoteService
-} from '@brucede/plugin-api';
+} from '@icebox/plugin-api';
 import type { CommandRegistry } from '@theia/core/lib/common/command';
 import { ReactWidget } from '@theia/core/lib/browser/widgets/react-widget';
 import type { Message } from '@theia/core/lib/browser/widgets/widget';
-import type { DisposerBag } from '@brucede/plugin-runtime';
+import type { DisposerBag } from '@icebox/plugin-runtime';
 import { PluginEventBus, PluginServiceRegistry } from '../../common/plugin-registries.js';
 import { WorkspaceDockingService } from '../workspace-docking-service.js';
 import { WorkspacePanelRegistry } from '../workspace-panel-registry.js';
@@ -37,7 +37,7 @@ export { PluginEventBus, PluginServiceRegistry };
 class HostReactWidget extends ReactWidget {
     constructor(private readonly elementFactory: () => React.ReactNode) {
         super();
-        this.addClass('bruce-plugin-panel');
+        this.addClass('icebox-plugin-panel');
     }
 
     protected override onAfterAttach(msg: Message): void {
@@ -207,7 +207,7 @@ export class PluginKernel {
             services: pluginServices,
             events: pluginEvents,
             ui: this.panelHostTools,
-            origin: { builtIn: !directory.includes('.brucede'), directory },
+            origin: { builtIn: !directory.includes('.icebox'), directory },
             onDispose: (disposer: PluginDisposer) => {
                 bag.add(disposer);
             }

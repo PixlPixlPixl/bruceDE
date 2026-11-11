@@ -1,5 +1,5 @@
 import { homedir } from 'node:os';
-import type { BackendPluginAPI } from '@brucede/plugin-api';
+import type { BackendPluginAPI } from '@icebox/plugin-api';
 import { FILE_ROOTS_SERVICE, type FileRoots, type FileRootsService } from '../shared.js';
 
 /**

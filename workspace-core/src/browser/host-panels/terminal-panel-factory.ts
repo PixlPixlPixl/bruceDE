@@ -1,11 +1,11 @@
 import { inject, injectable } from '@theia/core/shared/inversify';
 import { TerminalFrontendContribution } from '@theia/terminal/lib/browser/terminal-frontend-contribution';
 import type { Widget } from '@lumino/widgets';
-import { HOST_PANEL_CAPABILITIES } from '@brucede/plugin-api';
+import { HOST_PANEL_CAPABILITIES } from '@icebox/plugin-api';
 import type { HostPanelCreateRequest, HostPanelFactory } from './host-panel-factory-registry.js';
 
 /**
- * The `brucede.terminal` capability: a real Theia terminal, created host-side.
+ * The `icebox.terminal` capability: a real Theia terminal, created host-side.
  *
  * It deliberately reuses `TerminalFrontendContribution.newTerminal()` — the
  * exact call the host's own `Terminal: New Terminal` command reaches through

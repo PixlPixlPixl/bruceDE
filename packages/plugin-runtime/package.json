@@ -1,9 +1,9 @@
 {
-  "name": "@brucede/plugin-runtime",
+  "name": "@icebox/plugin-runtime",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Cordis-based native plugin lifecycle runtime for BruceDE.",
+  "description": "Cordis-based native plugin lifecycle runtime for Icebox.",
   "main": "./lib/index.js",
   "types": "./lib/index.d.ts",
   "exports": {
@@ -23,7 +23,7 @@
     "lib"
   ],
   "dependencies": {
-    "@brucede/plugin-api": "0.1.0",
+    "@icebox/plugin-api": "0.1.0",
     "@deepseek-ai/cordis": "4.1.0",
     "@deepseek-ai/cordis-plugin-loader": "1.1.0"
   },

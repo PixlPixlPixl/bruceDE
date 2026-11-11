@@ -17,10 +17,10 @@ export class WorkspaceUnavailablePanel extends Widget {
         this.title.label = options.panelTypeId;
         this.title.caption = `Unavailable panel: ${options.panelTypeId}`;
         this.title.closable = true;
-        this.addClass('bruce-workspace-unavailable-panel');
+        this.addClass('icebox-workspace-unavailable-panel');
 
         const message = document.createElement('div');
-        message.className = 'bruce-workspace-unavailable-message';
+        message.className = 'icebox-workspace-unavailable-message';
         Object.assign(message.style, {
             boxSizing: 'border-box',
             height: '100%',

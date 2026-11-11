@@ -1,5 +1,5 @@
 /**
- * Contract shared by the BruceDE renderer and backend for plugin discovery,
+ * Contract shared by the Icebox renderer and backend for plugin discovery,
  * trust decisions and asset delivery.
  *
  * This module must stay free of Theia, Lumino and Node imports: it is loaded by
@@ -7,21 +7,21 @@
  */
 
 /** RPC path the frontend proxy talks to. */
-export const PLUGIN_HOST_PATH = '/services/bruce/plugin-host';
+export const PLUGIN_HOST_PATH = '/services/icebox/plugin-host';
 
 /** RPC path of the renderer → backend plugin service bridge. */
-export const PLUGIN_SERVICE_RPC_PATH = '/services/bruce/plugin-services';
+export const PLUGIN_SERVICE_RPC_PATH = '/services/icebox/plugin-services';
 
 /** URL prefix under which the backend serves plugin ESM bundles and assets. */
-export const PLUGIN_ASSET_PREFIX = '/brucede-plugin-assets';
+export const PLUGIN_ASSET_PREFIX = '/icebox-plugin-assets';
 
 /** URL prefix of the host-module shims a plugin bundle imports at runtime. */
-export const HOST_MODULE_PREFIX = '/brucede-host-modules';
+export const HOST_MODULE_PREFIX = '/icebox-host-modules';
 
 /**
  * Host modules a plugin bundle may import. The keys are the bare npm specifiers
  * plugin source imports; the values are the canonical shim file names emitted
- * by `@brucede/plugin-build` and resolved to host instances at load time.
+ * by `@icebox/plugin-build` and resolved to host instances at load time.
  */
 export const HOST_MODULES: Readonly<Record<string, string>> = Object.freeze({
     react: 'react.js',
@@ -36,7 +36,7 @@ export const HOST_MODULES: Readonly<Record<string, string>> = Object.freeze({
     '@theia/core/lib/browser': 'theia-core-browser.js',
     '@theia/core/lib/common': 'theia-core-common.js',
     '@theia/core/lib/browser/widgets/react-widget': 'theia-react-widget.js',
-    '@brucede/plugin-api': 'brucede-plugin-api.js'
+    '@icebox/plugin-api': 'icebox-plugin-api.js'
 });
 
 /** Canonical specifier a plugin bundle uses to import a host module. */
@@ -44,7 +44,7 @@ export function hostModuleSpecifier(specifier: string): string {
     const file = HOST_MODULES[specifier];
     if (!file) {
         throw new Error(
-            `"${specifier}" is not a shared host module. Add it to HOST_MODULES in @brucede/plugin-host-protocol.`
+            `"${specifier}" is not a shared host module. Add it to HOST_MODULES in @icebox/plugin-host-protocol.`
         );
     }
     return `${HOST_MODULE_PREFIX}/${file}`;
@@ -77,7 +77,7 @@ export interface PluginDescriptor {
     readonly version: string;
     readonly apiVersion: number;
     readonly description?: string;
-    /** True for plugins shipped inside the BruceDE installation. */
+    /** True for plugins shipped inside the Icebox installation. */
     readonly builtIn: boolean;
     /** Folder the plugin was discovered in; diagnostic only. */
     readonly directory: string;

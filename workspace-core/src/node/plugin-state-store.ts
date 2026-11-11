@@ -22,7 +22,7 @@ interface PersistedShape {
  *
  * `enabled` is tri-state on purpose. An absent flag means "the user never
  * decided", which lets the host choose a sensible default per origin: built-in
- * plugins ship with BruceDE and start enabled, third-party ones start disabled
+ * plugins ship with Icebox and start enabled, third-party ones start disabled
  * until the user opts in.
  */
 export class PluginStateStore {

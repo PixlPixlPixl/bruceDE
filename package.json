@@ -1,4 +1,5 @@
 {
+  "name": "icebox",
   "private": true,
   "engines": {
     "node": ">=18",

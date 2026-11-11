@@ -1,6 +1,6 @@
 # AGENTS.md — plugins
 
-Compact instructions for agents adding plugins to BruceDE.
+Compact instructions for agents adding plugins to Icebox.
 
 ## Rule zero
 
@@ -32,13 +32,13 @@ backend entry at that exact path.
 
 ## Discovery
 
-Scanned on start, in order: `$BRUCEDE_PLUGINS_DIR` → `<appPath>/../plugins` →
-`<appPath>/plugins` → `~/.brucede/plugins`. State (trust/enabled) is stored in
-`~/.brucede/plugins.json` (`$BRUCEDE_STATE_DIR` overrides).
+Scanned on start, in order: `$ICEBOX_PLUGINS_DIR` → `<appPath>/../plugins` →
+`<appPath>/plugins` → `~/.icebox/plugins`. State (trust/enabled) is stored in
+`~/.icebox/plugins.json` (`$ICEBOX_STATE_DIR` overrides).
 
 - Folders under `plugins/` in this repo are **built-in**: trusted by definition
   and **enabled by default**.
-- Folders under `~/.brucede/plugins` are **third-party**: disabled until the user
+- Folders under `~/.icebox/plugins` are **third-party**: disabled until the user
   accepts the full-system-access warning in the plugin manager.
 - Problems never block startup. They surface as diagnostics in the plugin manager
   (`Plugins: Open Plugin Manager`) and in the backend log with `[plugin-host]`
@@ -48,15 +48,15 @@ Scanned on start, in order: `$BRUCEDE_PLUGINS_DIR` → `<appPath>/../plugins` �
 
 ```json
 {
-  "id": "bruce.terminal",
+  "id": "icebox.terminal",
   "name": "Terminal",
   "version": "0.1.0",
   "apiVersion": 1,
   "entrypoints": { "frontend": "./dist/frontend.js", "backend": "./dist/backend.js" },
-  "dependencies": { "bruce.workspace": "^0.1.0" },
+  "dependencies": { "icebox.workspace": "^0.1.0" },
   "contributes": {
     "panels": [{ "id": "terminal.main", "title": "Terminal" }],
-    "commands": [{ "id": "bruce.terminal.open", "title": "Terminal: New Terminal" }],
+    "commands": [{ "id": "icebox.terminal.open", "title": "Terminal: New Terminal" }],
     "services": ["terminal.sessions"]
   }
 }
@@ -65,12 +65,12 @@ Scanned on start, in order: `$BRUCEDE_PLUGINS_DIR` → `<appPath>/../plugins` �
 Validation is strict and runs before any code is imported:
 
 - `id`: lower-case, namespaced, `/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/`, globally unique
-  (prefix with `bruce.` and keep it stable — it identifies the plugin everywhere).
+  (prefix with `icebox.` and keep it stable — it identifies the plugin everywhere).
 - `version`: semver `x.y.z`.
 - `apiVersion`: integer; must equal the host's supported version (`1`).
 - `entrypoints`: relative, no `..`, must end in `.js`/`.mjs`; at least one of
   `frontend`/`backend` is required.
-- `dependencies`: map of plugin id → version range. `bruce.workspace` is the host
+- `dependencies`: map of plugin id → version range. `icebox.workspace` is the host
   and always satisfied; any other id must resolve to a discovered plugin whose
   `version` satisfies the range, or a diagnostic is raised.
 - `contributes`: declaration only — it lets the manager show capabilities before
@@ -80,14 +80,14 @@ Validation is strict and runs before any code is imported:
 ## Build and run
 
 ```bash
-npm ci                       # compiles @brucede/* and workspace-core (root postinstall)
+npm ci                       # compiles @icebox/* and workspace-core (root postinstall)
 node packages/plugin-build/build.mjs plugins/<plugin-id>   # one plugin
 npm run build:plugins                                      # every plugin
 npm run build:electron                                     # full app
 npm run start:electron
 ```
 
-The `@brucede/*` contracts are workspace packages, not published to npm. Their
+The `@icebox/*` contracts are workspace packages, not published to npm. Their
 `lib/` output is not committed, so any TypeScript run needs the compiled
 types first: `npm run build:workspace-core` if you installed with
 `--ignore-scripts`.
@@ -110,7 +110,7 @@ React or Lumino** — import them from the host (`host.React`, `host.widgets`), 
 import them directly and let the bundler alias them. Allowed: `react`,
 `react-dom`, `@lumino/widgets`, `@lumino/signaling`, `@lumino/domutils`,
 `@lumino/coreutils`, `@theia/core/lib/browser`, `@theia/core/lib/common`,
-`@theia/core/lib/browser/widgets/react-widget`, `@brucede/plugin-api`.
+`@theia/core/lib/browser/widgets/react-widget`, `@icebox/plugin-api`.
 Backend bundles are self-contained ESM (only `electron` stays external).
 
 ## The runtime contract
@@ -152,7 +152,7 @@ Backend (`BackendPluginAPI`): `api.services`, `api.events`, `api.onDispose`,
 `api.workspace {root, cwd}`, `api.manifest`, `api.origin`. No panels or commands.
 
 ```tsx
-import type { FrontendPluginAPI, PanelHostTools } from '@brucede/plugin-api';
+import type { FrontendPluginAPI, PanelHostTools } from '@icebox/plugin-api';
 
 export function activate(api: FrontendPluginAPI): void {
     api.panels.register({
@@ -161,7 +161,7 @@ export function activate(api: FrontendPluginAPI): void {
         createWidget: (instanceId, host, state) => myWidget(host, instanceId, state)
     });
     api.commands.register({
-        id: 'bruce.files.open',
+        id: 'icebox.files.open',
         title: 'Files: Open Browser',
         execute: () => api.panels.open('main')
     });
@@ -175,7 +175,7 @@ view. Do not reimplement it and do not import Theia internals. Adopt a curated
 **host capability** instead:
 
 ```ts
-import { HOST_PANEL_CAPABILITIES } from '@brucede/plugin-api';
+import { HOST_PANEL_CAPABILITIES } from '@icebox/plugin-api';
 
 api.panels.registerHostPanel({
     id: 'terminal.main',
@@ -183,20 +183,20 @@ api.panels.registerHostPanel({
     capabilityId: HOST_PANEL_CAPABILITIES.terminal
 });
 api.commands.register({
-    id: 'bruce.terminal.open',
+    id: 'icebox.terminal.open',
     title: 'Terminal: New Terminal',
     execute: () => api.panels.open('terminal.main')
 });
 ```
 
-A capability id (`brucede.terminal`) is a **stable host contract**, not an import
+A capability id (`icebox.terminal`) is a **stable host contract**, not an import
 path or a Theia class name. The host owns widget creation, rendering, persistence
 and disposal; you never receive a raw host widget, a DI container or a
 `WidgetManager`. Always gate on `hasHostCapability` (or let `registerHostPanel`
 throw) so a host without that capability fails loudly instead of showing an empty
 panel.
 
-Available today: `HOST_PANEL_CAPABILITIES.terminal` (`brucede.terminal`) — the
+Available today: `HOST_PANEL_CAPABILITIES.terminal` (`icebox.terminal`) — the
 host's native terminal, the same widget the built-in `Terminal: New Terminal`
 command creates. New capabilities are added host-side; a plugin cannot define one.
 
@@ -218,7 +218,7 @@ command creates. New capabilities are added host-side; a plugin cannot define on
   never registered under both. Do not try to make the two look uniform in
   `plugin.json` or in your code.
 
-Future note: a layout-level ownership marker only becomes worthwhile if BruceDE
+Future note: a layout-level ownership marker only becomes worthwhile if Icebox
 introduces a kind of panel whose **UI and lifecycle genuinely belong to a plugin**
 and must vanish completely when that plugin is disabled. Host-capability panels
 are the opposite case — host UI, host lifecycle — so they deliberately have no
@@ -228,7 +228,7 @@ marker. Do not add one for them.
 
 One registry per side (renderer, backend), shared across plugins and keyed by
 owner. Use `WORKSPACE_SERVICE_IDS` / `WORKSPACE_EVENT_IDS` from
-`@brucede/plugin-api`; never invent duplicate ids.
+`@icebox/plugin-api`; never invent duplicate ids.
 
 Provided by the host before any plugin activates:
 

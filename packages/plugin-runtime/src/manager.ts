@@ -6,7 +6,7 @@ import type {
     FrontendPluginModule,
     PluginDisposer,
     PluginManifest
-} from '@brucede/plugin-api';
+} from '@icebox/plugin-api';
 import { DisposerBag, toDisposer } from './disposal.js';
 
 /** Any plugin side module shape the runtime can activate. */
@@ -105,13 +105,13 @@ export class CordisPluginManager<TApi extends FrontendPluginAPI | BackendPluginA
         }
 
         const bag = new DisposerBag(error => this.onError(manifest, error));
-        const pluginFunction = function brucePlugin(ctx: Context): PluginDisposer {
+        const pluginFunction = function iceboxPlugin(ctx: Context): PluginDisposer {
             // Cordis runs this disposer on unload; it must be synchronous to
             // register, and may return a promise so unloading awaits the bag.
             ctx.effect(() => () => bag.disposeAll());
             return () => bag.disposeAll();
         };
-        Object.defineProperty(pluginFunction, 'name', { value: `bruce-plugin:${manifest.id}` });
+        Object.defineProperty(pluginFunction, 'name', { value: `icebox-plugin:${manifest.id}` });
 
         let fiber: Fiber;
         try {

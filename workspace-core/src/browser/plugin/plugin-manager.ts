@@ -5,7 +5,7 @@ import { CommandRegistry } from '@theia/core/lib/common/command';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { nls } from '@theia/core/lib/common/nls';
 import { ConfirmDialog } from '@theia/core/lib/browser/dialogs';
-import type { PluginManifest } from '@brucede/plugin-api';
+import type { PluginManifest } from '@icebox/plugin-api';
 import {
     PluginHostClient,
     PluginServiceBridge,
@@ -95,7 +95,7 @@ export class PluginManager implements FrontendApplicationContribution {
         await this.activateEnabledPlugins();
     }
 
-    /** Publishes the host's own services under `bruce.workspace`. Idempotent. */
+    /** Publishes the host's own services under `icebox.workspace`. Idempotent. */
     protected installHostServices(): void {
         if (this.hostServiceDisposers.length > 0) {
             return;
@@ -212,7 +212,7 @@ export class PluginManager implements FrontendApplicationContribution {
             // Not awaited: the dialog stays until the user dismisses it, and the
             // remaining plugins must not wait for that.
             void this.messages.error(
-                nls.localize('brucede/pluginRuntime', 'Plugin "{0}" failed to activate.', descriptor.id)
+                nls.localize('icebox/pluginRuntime', 'Plugin "{0}" failed to activate.', descriptor.id)
             );
         }
     }
@@ -237,14 +237,14 @@ export class PluginManager implements FrontendApplicationContribution {
     /** Full-system-access disclosure. Required before third-party plugins run. */
     protected async confirmFullSystemAccess(descriptor: PluginDescriptor): Promise<boolean> {
         const dialog = new ConfirmDialog({
-            title: nls.localize('brucede/pluginRuntime', 'Enable third-party plugin?'),
+            title: nls.localize('icebox/pluginRuntime', 'Enable third-party plugin?'),
             msg: nls.localize(
-                'brucede/pluginRuntime',
-                '"{0}" is third-party code. BruceDE plugins run with the full privileges of this application: they can read and write files, run processes, and use the network. There is no sandbox. Only enable plugins you trust.',
+                'icebox/pluginRuntime',
+                '"{0}" is third-party code. Icebox plugins run with the full privileges of this application: they can read and write files, run processes, and use the network. There is no sandbox. Only enable plugins you trust.',
                 `${descriptor.name} (${descriptor.id})`
             ),
-            ok: nls.localize('brucede/pluginRuntime', 'I understand, enable it'),
-            cancel: nls.localize('brucede/pluginRuntime', 'Cancel')
+            ok: nls.localize('icebox/pluginRuntime', 'I understand, enable it'),
+            cancel: nls.localize('icebox/pluginRuntime', 'Cancel')
         });
         try {
             return (await dialog.open()) === true;

@@ -11,13 +11,13 @@ import { WorkspaceUnavailablePanel } from './workspace-unavailable-panel.js';
  * rebuild them: it saves `{ factoryId, options }` for widgets the manager
  * created, and asks the factory to create them again on the next start.
  */
-export const WORKSPACE_PANEL_FACTORY_ID = 'bruce.workspace.panel';
+export const WORKSPACE_PANEL_FACTORY_ID = 'icebox.workspace.panel';
 
 /** Serializable construction options of one workspace panel instance. */
 export interface WorkspacePanelWidgetOptions {
-    /** Registered panel type, e.g. `bruce.terminal:terminal.main`. */
+    /** Registered panel type, e.g. `icebox.terminal:terminal.main`. */
     readonly panelTypeId: string;
-    /** Stable instance id, e.g. `bruce.terminal:terminal.main.1`. */
+    /** Stable instance id, e.g. `icebox.terminal:terminal.main.1`. */
     readonly instanceId: string;
     /**
      * JSON data the opening caller attached to this instance.

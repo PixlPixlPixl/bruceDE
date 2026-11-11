@@ -10,7 +10,7 @@ import * as luminoCoreutils from '@theia/core/shared/@lumino/coreutils';
 import * as theiaBrowser from '@theia/core/lib/browser';
 import * as theiaCommon from '@theia/core/lib/common';
 import * as theiaReactWidget from '@theia/core/lib/browser/widgets/react-widget';
-import * as pluginApi from '@brucede/plugin-api';
+import * as pluginApi from '@icebox/plugin-api';
 import { HOST_MODULES, HOST_MODULE_PREFIX } from '../../common/plugin-host-protocol.js';
 
 /** Namespace object of an imported host module. */
@@ -44,14 +44,14 @@ const HOST_MODULE_NAMESPACES: Readonly<Record<string, HostModuleNamespace>> = {
     '@theia/core/lib/browser': theiaBrowser as HostModuleNamespace,
     '@theia/core/lib/common': theiaCommon as HostModuleNamespace,
     '@theia/core/lib/browser/widgets/react-widget': theiaReactWidget as HostModuleNamespace,
-    '@brucede/plugin-api': pluginApi as HostModuleNamespace
+    '@icebox/plugin-api': pluginApi as HostModuleNamespace
 };
 
 /** Global store the generated shim modules read their namespace from. */
-const NAMESPACE_GLOBAL = '__brucedeHostModules';
+const NAMESPACE_GLOBAL = '__iceboxHostModules';
 
 function namespaceStore(): Record<string, HostModuleNamespace> {
-    // SAFETY: this module is the only writer of the private `__brucedeHostModules`
+    // SAFETY: this module is the only writer of the private `__iceboxHostModules`
     // global. The value is created as a string-keyed map of imported module
     // namespaces by this file, so the cast narrows `globalThis` without changing
     // the runtime value.
@@ -67,7 +67,7 @@ function namespaceStore(): Record<string, HostModuleNamespace> {
 /**
  * Supplies plugin bundles with the *host's own* copies of shared modules.
  *
- * Plugin bundles are built with `/brucede-host-modules/<file>.js` as an external
+ * Plugin bundles are built with `/icebox-host-modules/<file>.js` as an external
  * specifier. At load time the frontend fetches the bundle text and rewrites each
  * of those specifiers to a `blob:` URL created here. Each blob re-exports the
  * live host module namespace.

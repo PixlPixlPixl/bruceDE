@@ -1,10 +1,10 @@
-import { BRUCE_PLUGIN_API_VERSION, type PluginManifest } from '@brucede/plugin-api';
+import { ICEBOX_PLUGIN_API_VERSION, type PluginManifest } from '@icebox/plugin-api';
 
-/** Pattern for a globally unique, namespaced plugin id, e.g. `bruce.terminal`. */
+/** Pattern for a globally unique, namespaced plugin id, e.g. `icebox.terminal`. */
 export const PLUGIN_ID_PATTERN = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
 
 /** API versions this runtime can host. */
-export const SUPPORTED_API_VERSIONS: readonly number[] = [BRUCE_PLUGIN_API_VERSION];
+export const SUPPORTED_API_VERSIONS: readonly number[] = [ICEBOX_PLUGIN_API_VERSION];
 
 const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 
@@ -120,7 +120,7 @@ export function validatePluginManifest(value: unknown, manifestPath?: string): P
     const id = requireString(value, 'id', context);
     if (!PLUGIN_ID_PATTERN.test(id)) {
         throw new PluginManifestError(
-            `"id" must be a lower-case namespaced identifier such as "bruce.terminal" (got "${id}").`,
+            `"id" must be a lower-case namespaced identifier such as "icebox.terminal" (got "${id}").`,
             manifestPath
         );
     }

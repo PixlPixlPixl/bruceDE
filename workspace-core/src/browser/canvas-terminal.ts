@@ -9,7 +9,7 @@ import type { TerminalWidget } from '@theia/terminal/lib/browser/base/terminal-w
  *
  * The stock contribution opens a terminal into `area: 'bottom'` when there is no
  * stored layout. `CanvasApplicationShell` deliberately has no bottom panel, so
- * that terminal would be created and never shown. BruceDE's rule is that the
+ * that terminal would be created and never shown. Icebox's rule is that the
  * startup canvas is empty until the user acts, so this is a no-op.
  */
 @injectable()

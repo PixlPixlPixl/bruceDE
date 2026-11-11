@@ -1,11 +1,11 @@
-# BruceDE
+# Icebox
 
-BruceDE is a plugin-first Theia desktop workspace. The initial workspace is an empty docking canvas; users install/open feature panels and decide how they are arranged. The host provides docking, plugin lifecycle, shared APIs, and platform integration—not a prescribed IDE layout.
+Icebox is a plugin-first Theia desktop workspace. The initial workspace is an empty docking canvas; users install/open feature panels and decide how they are arranged. The host provides docking, plugin lifecycle, shared APIs, and platform integration—not a prescribed IDE layout.
 
 ## Development
 
 ```bash
-npm ci                      # also compiles @brucede/plugin-api, @brucede/plugin-runtime and workspace-core
+npm ci                      # also compiles @icebox/plugin-api, @icebox/plugin-runtime and workspace-core
 npm run build:electron      # plugin bundles, then the app
 npm run start:electron
 ```
@@ -29,10 +29,10 @@ the machine can connect. The electron target forwards the same arguments
 (`npm run start:electron -- --port 3001`).
 
 `npm ci`/`npm install` runs the root `postinstall`, which compiles the local
-packages in order (`@brucede/plugin-api` → `@brucede/plugin-runtime` →
+packages in order (`@icebox/plugin-api` → `@icebox/plugin-runtime` →
 `workspace-core`). They are workspace packages, not published to npm, so their
 `lib/` output is not committed; without that step TypeScript cannot resolve
-`@brucede/*` and reports `TS2307: Cannot find module '@brucede/plugin-api' or its
+`@icebox/*` and reports `TS2307: Cannot find module '@icebox/plugin-api' or its
 corresponding type declarations`.
 
 If you installed with `--ignore-scripts`, build them once by hand:
@@ -81,7 +81,7 @@ The application is pinned to Theia 1.77.0. Cordis is the native-plugin lifecycle
 
 The runtime is implemented and covers the full contract plugins rely on:
 
-1. **Discovery** — the backend scans the built-in `plugins/` folder and `~/.brucede/plugins`, validating every `plugin.json` before importing anything (`workspace-core/src/node/plugin-discovery.ts`).
+1. **Discovery** — the backend scans the built-in `plugins/` folder and `~/.icebox/plugins`, validating every `plugin.json` before importing anything (`workspace-core/src/node/plugin-discovery.ts`).
 2. **Frontend ESM loading** — bundles are served from the backend (same-origin `fetch` in the browser target) or handed over the existing RPC channel when the renderer runs from a `file://` origin (Electron), then dynamically imported. Shared host modules (`react`, `@lumino/widgets`, Theia browser/common) resolve to the host's own instances, so plugin widgets are real Lumino widgets (`workspace-core/src/browser/plugin/`).
 3. **Cordis activation/disposal** — each plugin runs in its own Cordis fiber; unloading drains its disposers in reverse order (`packages/plugin-runtime/src/manager.ts`).
 4. **Panel ownership + layout persistence** — every panel instance is created through one host `WidgetManager` factory, so panels are tracked by owner *and* persisted by Theia's layout restorer. A plugin unload closes the panels it opened; a restart re-opens the ones the user left open (`workspace-core/src/browser/workspace-panel-factory.ts`).

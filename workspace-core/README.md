@@ -1,6 +1,6 @@
 # Workspace Core
 
-The first-party Theia extension that provides BruceDE's user-controlled workspace.
+The first-party Theia extension that provides Icebox's user-controlled workspace.
 
 ## Current behavior
 
@@ -62,7 +62,7 @@ A panel definition does not specify a region or default position. Extensions reg
 ## Layout persistence
 
 Every panel instance is created through a single host `WidgetFactory`
-(`bruce.workspace.panel`, see `workspace-panel-factory.ts`) instead of being
+(`icebox.workspace.panel`, see `workspace-panel-factory.ts`) instead of being
 instantiated directly. Because `WidgetManager` therefore owns the instances,
 Theia's `ShellLayoutRestorer` can save the main DockPanel layout and rebuild it
 on the next start: splits, tabs, sizes and the last active panel all survive.
@@ -74,14 +74,14 @@ Saved layouts reference panel types, not plugin installations. If a panel's plug
 ## Host panel capabilities
 
 `HostPanelFactoryRegistry` is a curated catalog of native panels the host builds
-for plugins. A capability is named by a **stable id** (`brucede.terminal`) — never
+for plugins. A capability is named by a **stable id** (`icebox.terminal`) — never
 a module path or a Theia class name — so the implementation can change without
 breaking plugins. Factories are contributed through Inversify
 (`HostPanelFactory`); the catalog stays small and grows only as real needs appear.
 
 Today the catalog holds one entry:
 
-- `brucede.terminal` (`TerminalHostPanelFactory`) — creates a real terminal widget
+- `icebox.terminal` (`TerminalHostPanelFactory`) — creates a real terminal widget
   via `TerminalFrontendContribution.newTerminal()`, the exact call the built-in
   `Terminal: New Terminal` command reaches through `ShellTerminalProfile.start()`.
   It returns the terminal widget itself, not a wrapper, so `TerminalService`,
@@ -107,7 +107,7 @@ marks them, they stay open, and the plugin's disablement never destroys them.
 
 Restoration authority stays single-owner:
 
-- plugin-built panels are registered under `bruce.workspace.panel` and restored by
+- plugin-built panels are registered under `icebox.workspace.panel` and restored by
   the workspace mechanism;
 - host-capability panels are registered only under their original Theia factory
   (`terminal`) and restored by Theia.
@@ -141,7 +141,7 @@ fetch`). The bundle therefore travels over the existing RPC channel via
   `PluginHostClient.readFrontendBundle`.
 
 Both paths end in the same place: the source is rewritten so
-`/brucede-host-modules/<file>.js` specifiers point at blob URLs that re-export
+`/icebox-host-modules/<file>.js` specifiers point at blob URLs that re-export
 the host's own module instances, then imported.
 
 Entrypoint paths in `plugin.json` are normalized before they become URLs
@@ -160,9 +160,9 @@ toggle that could only revoke it would be a trap.
 
 ## Host services
 
-The host publishes its own services under the `bruce.workspace` owner before any plugin activates:
+The host publishes its own services under the `icebox.workspace` owner before any plugin activates:
 
 - `workspace.resources` (`WorkspaceResourceService`) — absolute path → stable URI, `stat`, `list`. Plugins must obtain resource URIs here rather than building `file://` strings, so File Browser and Git agree on identity.
 - `workspace.selection` (`WorkspaceSelectionService`) — the current `{ uri, ranges }` selection plus change notifications, mirrored onto the `workspace/selection-changed` event.
 
-Service and event ids live in `@brucede/plugin-api` (`WORKSPACE_SERVICE_IDS`, `WORKSPACE_EVENT_IDS`).
+Service and event ids live in `@icebox/plugin-api` (`WORKSPACE_SERVICE_IDS`, `WORKSPACE_EVENT_IDS`).

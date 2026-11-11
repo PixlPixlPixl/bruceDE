@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
-import type { BackendPluginAPI } from '@brucede/plugin-api';
-import { WORKSPACE_SERVICE_IDS } from '@brucede/plugin-api';
+import type { BackendPluginAPI } from '@icebox/plugin-api';
+import { WORKSPACE_SERVICE_IDS } from '@icebox/plugin-api';
 import { AcpClient, AcpConnection, type AcpModelInfo, type AcpPromptUsage } from '../acp.js';
 import { PiRpcConnection } from '../pi-rpc.js';
 import { executableExists } from '../spawn.js';
@@ -36,7 +36,7 @@ const MAX_ATTACHMENTS_BYTES = 400_000;
  * Entries carry their availability: the picker shows installed agents in full
  * colour and the rest dimmed, so the user can see what this build supports
  * without being able to launch something that is not there. Any ACP agent can
- * also be added without a code change through `BRUCEDE_AGENTS`.
+ * also be added without a code change through `ICEBOX_AGENTS`.
  *
  * Two protocols are supported, because the ecosystem is not uniform: most agents
  * speak ACP, Pi speaks its own RPC mode and has no ACP mode. The handshake is the
@@ -1012,7 +1012,7 @@ function pushEntry(session: LiveSession, entry: ChatEntry): void {
 }
 
 /**
- * Agents come from `BRUCEDE_AGENTS` (authoritative; `BRUCEDE_ACP_AGENTS` is
+ * Agents come from `ICEBOX_AGENTS` (authoritative; `ICEBOX_ACP_AGENTS` is
  * still accepted as its old name) or the known list.
  * The environment variable is a JSON array of `{ id, name, command, args?, protocol? }`.
  */
@@ -1040,7 +1040,7 @@ function toDescriptor(candidate: AgentCandidate, available: boolean): AgentDescr
 }
 
 function readConfiguredAgents(): AgentCandidate[] | undefined {
-    const raw = process.env.BRUCEDE_AGENTS ?? process.env.BRUCEDE_ACP_AGENTS;
+    const raw = process.env.ICEBOX_AGENTS ?? process.env.ICEBOX_ACP_AGENTS;
     if (!raw || !raw.trim()) {
         return undefined;
     }

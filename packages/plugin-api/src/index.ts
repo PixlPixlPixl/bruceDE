@@ -4,17 +4,17 @@ import type { Widget } from '@lumino/widgets';
  * Version of the host/plugin contract. A plugin declaring an unsupported
  * `apiVersion` is rejected before any of its code is imported.
  */
-export const BRUCE_PLUGIN_API_VERSION = 1 as const;
+export const ICEBOX_PLUGIN_API_VERSION = 1 as const;
 
 export type PluginSide = 'frontend' | 'backend';
 export type PluginDisposer = () => void | Promise<void>;
 
 /** Identifiers that are always available from the host, never loaded as plugins. */
-export const BRUCE_WORKSPACE_PLUGIN_ID = 'bruce.workspace';
+export const ICEBOX_WORKSPACE_PLUGIN_ID = 'icebox.workspace';
 
 /**
  * Stable service ids. Host services are provided under
- * `BRUCE_WORKSPACE_PLUGIN_ID` before any plugin activates; first-party feature
+ * `ICEBOX_WORKSPACE_PLUGIN_ID` before any plugin activates; first-party feature
  * plugins provide the rest.
  *
  * Service ids are part of the public contract: renaming one is a breaking
@@ -123,11 +123,11 @@ export interface PluginManifestContributions {
 }
 
 export interface PluginManifest {
-    /** Globally unique, namespaced identifier, e.g. `bruce.terminal`. */
+    /** Globally unique, namespaced identifier, e.g. `icebox.terminal`. */
     readonly id: string;
     readonly name: string;
     readonly version: string;
-    /** Must equal a {@link BRUCE_PLUGIN_API_VERSION} the host supports. */
+    /** Must equal a {@link ICEBOX_PLUGIN_API_VERSION} the host supports. */
     readonly apiVersion: number;
     readonly description?: string;
     /** Module paths relative to the plugin folder. */
@@ -213,7 +213,7 @@ export interface PanelDefinition {
  */
 export const HOST_PANEL_CAPABILITIES = {
     /** Interactive terminal backed by the host's native terminal widget. */
-    terminal: 'brucede.terminal'
+    terminal: 'icebox.terminal'
 } as const;
 
 export type HostPanelCapabilityId =
