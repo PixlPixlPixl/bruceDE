@@ -191,7 +191,9 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   is the agent's own resume path rather than a fresh session. Projects and
   sessions can be archived (kept, out of the way) or deleted; deleting a live
   session releases its agent. The panel polls `projects.refresh()` since the host
-  has no renderer push channel.
+  has no renderer push channel. Its header uses the same `6px` + 22px control +
+  `6px` box as the other panels, so the separator lines align when they sit side
+  by side.
 - **Terminal** (`icebox.terminal`) — adopts the host's `icebox.terminal`
   capability through `api.panels.registerHostPanel`, so the widget is created,
   rendered, persisted and disposed by the host's own terminal code. The plugin

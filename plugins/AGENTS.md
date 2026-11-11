@@ -283,7 +283,15 @@ It throws in backend code — backend plugins use `get` in-process.
    files. An icon-only button keeps an `aria-label` and a `title` so it stays
    reachable and explained, and centres its glyph with flexbox rather than a
    line height.
-9. **Never promise code unload.** Native ESM module records may stay cached;
+9. **Panel headers share one box.** A panel's header is `6px 10px` padding
+   around a 22px control, with a `1px` `--theia-panel-border` bottom border,
+   so the separator line lands on the same pixel row in every panel docked side
+   by side. The control drives the height — a 13px label next to an 18px button
+   makes a 31px header while the neighbouring panel is 35px. Give the header's
+   controls a fixed `height: '22px'` (icon buttons `22px × 22px`, text buttons
+   `height: '22px'` with horizontal padding only) instead of sizing them by
+   padding and font size.
+10. **Never promise code unload.** Native ESM module records may stay cached;
    reload/restart is the answer when a module cannot be replaced safely.
 
 ## Checklist before you finish

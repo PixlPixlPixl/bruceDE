@@ -831,10 +831,18 @@ const DANGER_BUTTON_STYLE: ReactNS.CSSProperties = {
     border: '1px solid var(--theia-errorForeground)'
 };
 
+/**
+ * The header's one control.
+ *
+ * Fixed 22px box, like the Git, File Browser and Agent Chat headers: the header
+ * is `6px + control + 6px + 1px border`, so the separator line lands on the same
+ * pixel row as the other panels when they sit side by side.
+ */
 const PRIMARY_BUTTON_STYLE: ReactNS.CSSProperties = {
     marginLeft: 'auto',
     flexShrink: 0,
-    padding: '3px 8px',
+    height: '22px',
+    padding: '0 8px',
     fontSize: '11px',
     background: 'var(--theia-button-background)',
     color: 'var(--theia-button-foreground)',
