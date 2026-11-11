@@ -1,7 +1,9 @@
 {
   "private": true,
   "name": "electron-app",
-  "version": "0.0.0",
+  "productName": "Icebox",
+  "version": "0.1.0",
+  "description": "Icebox is a plugin-first desktop workspace: an empty docking canvas you fill with panels.",
   "main": "lib/backend/electron-main.js",
   "dependencies": {
     "@icebox/plugin-api": "0.1.0",
@@ -26,7 +28,7 @@
     "electron": "44.9.1"
   },
   "scripts": {
-    "bundle": "npm run rebuild && npm run native:ffmpeg && node ../node_modules/@theia/cli/bin/theia.js build --mode development",
+    "bundle": "npm run rebuild && npm run native:ffmpeg && node ../node_modules/@theia/cli/bin/theia.js build --mode development && node ../scripts/brand-generated-html.mjs .",
     "native:ffmpeg": "node ../scripts/ensure-ffmpeg-addon.mjs",
     "rebuild": "node ../node_modules/@theia/cli/bin/theia.js rebuild:electron --cacheRoot ..",
     "start": "node ../node_modules/@theia/cli/bin/theia.js start",

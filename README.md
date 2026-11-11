@@ -124,6 +124,10 @@ shim, `cmd.exe` resolves that quoted name literally and fails with
 
 The application is pinned to Theia 1.77.0. Cordis is the native-plugin lifecycle engine. Plugins are trusted code, not sandboxed: read [AGENTS.md](./AGENTS.md) before developing or installing plugins.
 
+Everything the user sees is branded Icebox. The main window title comes from `theia.frontend.config.applicationName` in each app manifest; every build then runs `scripts/brand-generated-html.mjs`, which also rewrites the secondary-window title that Theia's generator hardcodes as "Theia — Secondary Window". The bundled color and icon themes are listed as `Dark (Icebox)` / `File Icons (Icebox)` by `workspace-core/src/browser/workspace-branding.ts`, which overrides the theme listings without touching ids, colors or activation.
+
+The Electron app carries `productName: "Icebox"` and version `0.1.0` in `electron-app/package.json`, which is what names the application everywhere outside the renderer: the dock/taskbar label, the User-Agent (`Icebox/0.1.0`) and the user-data directory (`~/.config/Icebox` on Linux, `%APPDATA%\Icebox` on Windows, `~/Library/Application Support/Icebox` on macOS). Renaming it moves that directory, so an existing installation starts with a fresh window state — a layout saved under the old name is not migrated.
+
 ## Plugin runtime
 
 The runtime is implemented and covers the full contract plugins rely on:

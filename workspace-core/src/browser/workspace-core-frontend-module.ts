@@ -27,7 +27,10 @@ import { WorkspacePalette } from './workspace-palette.js';
 import { WorkspaceQuickCommandService } from './workspace-quick-command-service.js';
 import { WorkspaceLayoutService } from './workspace-layout-service.js';
 import { WorkspaceHostStyles } from './workspace-host-styles.js';
+import { WorkspaceIconThemeService, WorkspaceThemeService } from './workspace-branding.js';
 import { QuickCommandService } from '@theia/core/lib/browser/quick-input/quick-command-service';
+import { ThemeService } from '@theia/core/lib/browser/theming';
+import { IconThemeService } from '@theia/core/lib/browser/icon-theme-service';
 import {
     PLUGIN_HOST_PATH,
     PLUGIN_SERVICE_RPC_PATH,
@@ -72,6 +75,10 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(CommandContribution).toService(WorkspaceLayoutService);
     bind(WorkspaceHostStyles).toSelf().inSingletonScope();
     bind(FrontendApplicationContribution).toService(WorkspaceHostStyles);
+    // The bundled color and icon themes are Icebox's own themes, so their labels
+    // carry the application's name rather than Theia's.
+    rebind(ThemeService).to(WorkspaceThemeService).inSingletonScope();
+    rebind(IconThemeService).to(WorkspaceIconThemeService).inSingletonScope();
 
     // Plugin host: shared registries, the manager, and its UI/commands.
     bind(PluginServiceRegistry).toSelf().inSingletonScope();

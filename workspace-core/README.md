@@ -229,3 +229,33 @@ through:
 Scope new rules to the exact Theia class and position they correct, and leave
 interactive hover variants (`extended-tab-preview`, sidebar menus, the status
 bar) with their pointer events.
+
+## Branding
+
+Every user-visible name is the application's own. Two surfaces need host work
+because Theia writes its own name into them:
+
+- **Window titles.** `theia build` titles the main window from
+  `theia.frontend.config.applicationName` (`Icebox` in both app manifests), but its
+  frontend generator hardcodes `Theia — Secondary Window`. Every build therefore
+  ends with `scripts/brand-generated-html.mjs <app>`, wired into each app's
+  `bundle` script, which rewrites the generated titles in `src-gen/frontend` and
+  `lib/frontend`. Patching the generated files is the only option: the templates
+  live in a dependency.
+- **Theme names.** The bundled color and icon themes are labelled
+  `Dark (Theia)`, `File Icons (Theia)`, and those labels reach the theme pickers
+  and the matching preference dropdowns. `WorkspaceThemeService` and
+  `WorkspaceIconThemeService` (`workspace-branding.ts`) override the *listing*
+  only — `getThemes`/`definitions` — so ids, colors, activation and the persisted
+  preference value are untouched and an existing `workbench.colorTheme` still
+  applies. The preference enums follow automatically because both services build
+  them from the same listing.
+
+Third-party attribution stays: the About dialog lists the extensions that are
+installed, and libraries that ship their own names keep them.
+
+`electron-app/package.json` carries `productName: "Icebox"`; that name is what
+the operating system shows for the application (dock/taskbar/menu label) and what
+Electron derives the User-Agent and the user-data directory from
+(`~/.config/Icebox` on Linux). Both app manifests also carry the release version,
+which the About dialog reports.

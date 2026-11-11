@@ -1,7 +1,8 @@
 {
   "private": true,
   "name": "browser-app",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Icebox is a plugin-first desktop workspace: an empty docking canvas you fill with panels.",
   "dependencies": {
     "@icebox/plugin-api": "0.1.0",
     "@icebox/plugin-runtime": "0.1.0",
@@ -23,7 +24,7 @@
     "@theia/cli": "1.77.0"
   },
   "scripts": {
-    "bundle": "npm run rebuild && node ../node_modules/@theia/cli/bin/theia.js build --mode development",
+    "bundle": "npm run rebuild && node ../node_modules/@theia/cli/bin/theia.js build --mode development && node ../scripts/brand-generated-html.mjs .",
     "rebuild": "node ../node_modules/@theia/cli/bin/theia.js rebuild:browser --cacheRoot ..",
     "start": "node ../node_modules/@theia/cli/bin/theia.js start",
     "watch": "npm run rebuild && node ../node_modules/@theia/cli/bin/theia.js build --watch --mode development"
