@@ -119,6 +119,12 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   thousands of models, so the catalogue is fetched on demand by a filtered
   `searchModels` call instead of travelling with every state poll.
 
+  The composer wraps its content as it is typed and stops growing at a fixed
+  height, where it scrolls, so a long prompt never pushes the transcript off
+  screen. The model menu takes keystrokes as a filter (its search field is
+  focused as soon as it opens), and a tab that is still starting an agent says
+  "Connecting to agent..." rather than "Agent is working...".
+
   Typing `/` offers the agent's own commands (`get_commands` in Pi, the
   `available_commands_update` notification in ACP), `@` offers files from the
   host's `workspace.resources` service, and `!` runs a shell command through the

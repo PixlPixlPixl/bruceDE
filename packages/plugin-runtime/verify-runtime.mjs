@@ -537,6 +537,35 @@ check(
     'a document mousedown listener would swallow the click on a row'
 );
 
+check(
+    'the composer wraps its content instead of being drag-resized',
+    agentChatFrontend.includes("resize: 'none'") && agentChatFrontend.includes('COMPOSER_MAX_HEIGHT')
+        && agentChatFrontend.includes('element.scrollHeight'),
+    'the chat input would need a manual drag to fit its text'
+);
+check(
+    'the composer stops growing at its cap and scrolls instead',
+    agentChatFrontend.includes("element.style.overflowY = fits > COMPOSER_MAX_HEIGHT ? 'auto' : 'hidden'"),
+    'a long prompt would push the transcript off screen'
+);
+check(
+    'a starting session reads as connecting, not as working',
+    agentChatFrontend.includes("'Connecting to agent...'") && agentChatFrontend.includes("const starting = state?.status === 'starting'")
+        && agentChatFrontend.includes("const working = state?.status === 'running'"),
+    'the panel cannot tell connecting apart from a running turn'
+);
+check(
+    'the model menu takes keystrokes as a filter',
+    agentChatFrontend.includes('modelFilter') && agentChatFrontend.includes('modelFilter.current?.focus()')
+        && agentChatFrontend.includes('ref: filterRef'),
+    'typing with the model list open would not narrow it'
+);
+check(
+    'closing a menu returns focus to the composer',
+    agentChatFrontend.includes('composer.current?.focus()'),
+    'the user would have to click back into the input'
+);
+
 console.log('install and build scripts avoid Windows shims');
 {
     // `node_modules/.bin` wrappers are .cmd files on Windows whose last line is

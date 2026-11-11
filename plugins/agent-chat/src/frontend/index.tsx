@@ -24,6 +24,12 @@ const MODEL_ROWS = 40;
 const COMPLETION_ROWS = 8;
 /** Files listed per `@` completion query. */
 const FILE_ROWS = 40;
+/**
+ * The composer grows with its content up to this height and scrolls beyond it.
+ * Fixed in pixels so a narrow panel and a wide one stop growing at the same
+ * point instead of depending on the window height.
+ */
+const COMPOSER_MAX_HEIGHT = 240;
 
 /**
  * Native renderer entrypoint for agent chat.
@@ -173,6 +179,7 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
     const [completion, setCompletion] = React.useState<CompletionView>();
     const scroller = React.useRef<HTMLDivElement>(null);
     const composer = React.useRef<HTMLTextAreaElement>(null);
+    const modelFilter = React.useRef<HTMLInputElement>(null);
     const pendingCaret = React.useRef<number | undefined>(undefined);
     const fileLookup = React.useRef(0);
 
@@ -268,6 +275,27 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
         }
     }, [input]);
 
+    // The composer wraps its content instead of being drag-resized: measure the
+    // content and set the height, scrolling only once the cap is reached.
+    React.useLayoutEffect(() => {
+        const element = composer.current;
+        if (!element) {
+            return;
+        }
+        element.style.height = 'auto';
+        const fits = element.scrollHeight + 2;
+        element.style.height = `${Math.min(fits, COMPOSER_MAX_HEIGHT)}px`;
+        element.style.overflowY = fits > COMPOSER_MAX_HEIGHT ? 'auto' : 'hidden';
+    }, [input]);
+
+    // Typing while the model list is open filters it: the filter input takes
+    // focus as soon as the menu appears, so no keystroke has to be lost.
+    React.useLayoutEffect(() => {
+        if (modelMenuOpen) {
+            modelFilter.current?.focus();
+        }
+    }, [modelMenuOpen]);
+
     // Escape closes whichever menu is open. Outside clicks are handled by the
     // backdrops below: a document-level listener would dismiss on `mousedown`,
     // before the `click` could land on the row the user aimed at.
@@ -282,6 +310,7 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
             setPickerOpen(false);
             setModelMenuOpen(false);
             setCompletion(undefined);
+            composer.current?.focus();
         };
         document.addEventListener('keydown', onKeyDown);
         return () => document.removeEventListener('keydown', onKeyDown);
@@ -489,7 +518,8 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
         }
     };
 
-    const running = state?.status === 'running' || state?.status === 'starting';
+    const starting = state?.status === 'starting';
+    const working = state?.status === 'running';
     const installed = availableAgents(agents);
     const missing = unavailableAgents(agents);
     const modelState = state?.model;
@@ -566,7 +596,10 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
                     React.createElement('span', { style: { whiteSpace: 'pre-wrap' } }, entry.text)
                 )
             ),
-            running
+            starting
+                ? React.createElement('div', { style: MUTED_STYLE }, 'Connecting to agent...')
+                : undefined,
+            working
                 ? React.createElement('div', { style: MUTED_STYLE }, 'Agent is working…')
                 : undefined
         ),
@@ -585,7 +618,8 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
                     placeholder: agentId
                         ? 'Ask the agent…  /commands, @files, !shell'
                         : 'Pick an agent with + first',
-                    rows: 3,
+                    // Height is measured from the content; `rows` would fight it.
+                    rows: 1,
                     style: INPUT_STYLE,
                     disabled: !agentId,
                     onChange: (event: ReactNS.ChangeEvent<HTMLTextAreaElement>) => {
@@ -640,7 +674,7 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
                                 type: 'button',
                                 style: BUTTON_STYLE,
                                 onClick: () => void cancel(),
-                                disabled: !running
+                                disabled: !working
                             },
                             'Cancel'
                         )
@@ -667,7 +701,8 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
                             searchModels(next);
                         },
                         onModel: model => void chooseModel(model),
-                        onThinking: level => void chooseThinking(level)
+                        onThinking: level => void chooseThinking(level),
+                        filterRef: modelFilter
                     })
                     : undefined
             )
@@ -781,8 +816,11 @@ interface ModelMenuProps {
 }
 
 /** Model and thinking picker for the connected agent. */
-function renderModelMenu(React: PanelHostTools['React'], props: ModelMenuProps): ReactNS.ReactNode {
-    const { model, query, rows, onQuery, onModel, onThinking } = props;
+function renderModelMenu(
+    React: PanelHostTools['React'],
+    props: ModelMenuProps & { readonly filterRef: ReactNS.RefObject<HTMLInputElement | null> }
+): ReactNS.ReactNode {
+    const { model, query, rows, onQuery, onModel, onThinking, filterRef } = props;
     const levels = model?.thinkingLevels ?? [];
     const current = model?.current;
 
@@ -817,6 +855,7 @@ function renderModelMenu(React: PanelHostTools['React'], props: ModelMenuProps):
         React.createElement('div', { style: PICKER_GROUP_STYLE },
             model?.modelCount ? `Model · ${model.modelCount} available` : 'Model'),
         React.createElement('input', {
+            ref: filterRef,
             value: query,
             placeholder: 'Filter by name, id or provider',
             style: MODEL_FILTER_STYLE,
@@ -1201,7 +1240,8 @@ const COMPOSER_STYLE: ReactNS.CSSProperties = {
 const INPUT_STYLE: ReactNS.CSSProperties = {
     width: '100%',
     boxSizing: 'border-box',
-    resize: 'vertical',
+    resize: 'none',
+    overflowY: 'hidden',
     background: 'var(--theia-input-background)',
     color: 'var(--theia-input-foreground)',
     border: '1px solid var(--theia-input-border)',
