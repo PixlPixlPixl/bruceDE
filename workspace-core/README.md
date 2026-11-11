@@ -205,3 +205,27 @@ The host publishes its own services under the `icebox.workspace` owner before an
 - `workspace.dialogs` (`WorkspaceDialogService`) — the host's native folder picker. Plugins cannot import Theia's file dialog (it needs the shell's parent window and platform quirks), so Projects asks for a folder through this instead of building a picker.
 
 Service and event ids live in `@icebox/plugin-api` (`WORKSPACE_SERVICE_IDS`, `WORKSPACE_EVENT_IDS`).
+
+## Host styles
+
+`WorkspaceHostStyles` (`workspace-host-styles.ts`) injects the few CSS rules the
+host has to own, because they correct a Theia behaviour rather than decorate a
+panel. The rules live in a `<style>` element added at startup: workspace-core
+compiles with plain `tsc` and is not bundled, so it has no stylesheet pipeline,
+and a `.css` file nothing imports would be dead weight.
+
+One rule exists today. Theia shows a tab's caption as a tooltip when the pointer
+enters the tab. That tooltip is a top-layer popover placed directly below the tab
+— on top of the panel's own first rows — and it keeps pointer events, so a click
+there is consumed by the tooltip instead of reaching the panel. In a terminal
+the first rows are the prompt: the click that should focus the terminal instead
+dismisses the tooltip, the terminal is **blurred**, its cursor turns hollow, and
+every keystroke goes to the document body. The terminal looks frozen while it is
+simply not the focused element. The tooltip is inert text, so it now lets clicks
+through:
+
+    .theia-hover.bottom:not(.extended-tab-preview) { pointer-events: none; }
+
+Scope new rules to the exact Theia class and position they correct, and leave
+interactive hover variants (`extended-tab-preview`, sidebar menus, the status
+bar) with their pointer events.

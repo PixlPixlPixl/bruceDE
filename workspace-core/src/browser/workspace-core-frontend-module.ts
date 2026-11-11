@@ -26,6 +26,7 @@ import { WorkspaceDialogService } from './workspace-dialog-service.js';
 import { WorkspacePalette } from './workspace-palette.js';
 import { WorkspaceQuickCommandService } from './workspace-quick-command-service.js';
 import { WorkspaceLayoutService } from './workspace-layout-service.js';
+import { WorkspaceHostStyles } from './workspace-host-styles.js';
 import { QuickCommandService } from '@theia/core/lib/browser/quick-input/quick-command-service';
 import {
     PLUGIN_HOST_PATH,
@@ -69,6 +70,8 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     rebind(QuickCommandService).to(WorkspaceQuickCommandService).inSingletonScope();
     bind(WorkspaceLayoutService).toSelf().inSingletonScope();
     bind(CommandContribution).toService(WorkspaceLayoutService);
+    bind(WorkspaceHostStyles).toSelf().inSingletonScope();
+    bind(FrontendApplicationContribution).toService(WorkspaceHostStyles);
 
     // Plugin host: shared registries, the manager, and its UI/commands.
     bind(PluginServiceRegistry).toSelf().inSingletonScope();
