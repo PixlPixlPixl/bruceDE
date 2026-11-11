@@ -196,7 +196,7 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   capability through `api.panels.registerHostPanel`, so the widget is created,
   rendered, persisted and disposed by the host's own terminal code. The plugin
   bundle contains no Theia or xterm code. The built-in
-  `Terminal: New Terminal` command reaches the same creation path and the same
+  `Open Terminal` command reaches the same creation path and the same
   main-area placement (see `workspace-core/src/browser/canvas-terminal.ts`).
 
 ## Trust

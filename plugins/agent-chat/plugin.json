@@ -21,7 +21,7 @@
         "commands": [
             {
                 "id": "icebox.agent-chat.open",
-                "title": "Agent: Open Chat"
+                "title": "Open Agent Chat"
             }
         ],
         "services": [

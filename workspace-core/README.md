@@ -12,6 +12,9 @@ The first-party Theia extension that provides Icebox's user-controlled workspace
 - Persists per-instance panel state alongside the layout: `open(panelId, { state })`
   stores a plain JSON object that is validated, saved with the widget and handed
   back to `createWidget(instanceId, host, state)` when the tab is rebuilt.
+- Keeps F1 a workspace menu: panel commands, the plugin manager, and
+  `Save Layout` / `Load Layout`. Other commands stay registered and executable, but
+  they are not searchable there — they belong in the application's own UI.
 - Ships no demo panels or demo commands: every panel comes from a plugin.
 
 Theia's ApplicationShell mainPanel is already a multiple-document TheiaDockPanel. This extension changes the root shell layout rather than implementing another docking engine.
@@ -24,16 +27,27 @@ From the repository root:
     npm run build:electron
     npm run start:electron
 
-The workspace starts empty. Press F1 and run a plugin command:
+The workspace starts empty. Press F1 and run a menu entry:
 
-- `Terminal: New Terminal` — a real host terminal in the main DockPanel
-- `Files: Open Browser` — the file browser panel
-- `Git: Open Changes` — the Git panel
-- `Agent: Open Chat` — the ACP agent chat panel
-- `Plugins: Open Manager` — install/enable plugins and review the trust warning
+- `Open Terminal` — a real host terminal in the main DockPanel
+- `Open File Browser` — the file browser panel
+- `Open Git` — the Git panel
+- `Open Agent Chat` — the ACP agent chat panel
+- `Open Projects` — project folders and their agent sessions
+- `Open Plugin Manager` — install/enable plugins and review the trust warning
+- `Save Layout` / `Load Layout` — snapshot the arrangement, restore it later
 
-Every command above belongs to a plugin under `plugins/`. The host has no
+Every panel above belongs to a plugin under `plugins/`. The host has no
 built-in panels of its own.
+
+F1 is the workspace menu, not a mirror of the command registry. It lists panel
+commands and the layout commands above, and nothing else: no command is searchable
+in it unless something put it there. A panel command enters the menu where the
+plugin registers it (`WorkspacePalette.include` in the plugin kernel), and the
+layout commands enter it in their own contribution, so a plugin that is disabled
+or failed to activate is absent rather than listed and broken. Everything else
+keeps working — commands stay registered for key bindings and panels — because
+the menu only decides what F1 shows (`WorkspaceQuickCommandService`).
 
 ## Contribute a panel from another Theia extension
 
@@ -71,6 +85,30 @@ The plugin host activates enabled plugins during `FrontendApplicationContributio
 
 Saved layouts reference panel types, not plugin installations. If a panel's plugin is disabled or uninstalled, the tab is restored as an "unavailable" placeholder instead of failing the whole layout; re-enabling the plugin and restarting brings the real panel back. Starting with no saved layout leaves the canvas empty, as before.
 
+### Named layouts
+
+`WorkspaceLayoutService` adds `Save Layout` and `Load Layout`, the only two
+commands in the F1 menu that are not a plugin's. A layout is the shell's own
+layout data with every widget replaced by the description `WidgetManager` rebuilds
+it from (`workspace-layout-service.ts`), which is exactly what the startup restore
+uses — so a loaded layout brings back the same panels in the same dock areas with
+the same per-panel state, including the agent and working directory an Agent Chat
+panel was opened with. Loading calls `ApplicationShell.setLayoutData`, the call
+Theia's perspective switching uses to replace a running shell's arrangement, so
+nothing is reloaded to apply it.
+
+Two details matter for correctness:
+
+- a widget that cannot be rebuilt aborts the load with a message instead of
+  silently dropping a tab, because a half-restored shell is not a layout;
+- state is only replayed into widgets that do not exist yet. A widget already
+  attached to the shell is live, and replaying `TerminalWidget.restoreState` would
+  re-attach to a terminal server channel the running terminal still holds.
+
+Named layouts live in the app's browser storage (`StorageService`), the same
+place Theia keeps its own layout — so they belong to the installation and profile
+that saved them, and the automatic restore of the last session is unaffected.
+
 ## Host panel capabilities
 
 `HostPanelFactoryRegistry` is a curated catalog of native panels the host builds
@@ -83,7 +121,7 @@ Today the catalog holds one entry:
 
 - `icebox.terminal` (`TerminalHostPanelFactory`) — creates a real terminal widget
   via `TerminalFrontendContribution.newTerminal()`, the exact call the built-in
-  `Terminal: New Terminal` command reaches through `ShellTerminalProfile.start()`.
+  `Open Terminal` command reaches through `ShellTerminalProfile.start()`.
   It returns the terminal widget itself, not a wrapper, so `TerminalService`,
   terminal splits and Theia's own restore keep working.
 
@@ -164,5 +202,6 @@ The host publishes its own services under the `icebox.workspace` owner before an
 
 - `workspace.resources` (`WorkspaceResourceService`) — absolute path → stable URI, `stat`, `list`. Plugins must obtain resource URIs here rather than building `file://` strings, so File Browser and Git agree on identity.
 - `workspace.selection` (`WorkspaceSelectionService`) — the current `{ uri, ranges }` selection plus change notifications, mirrored onto the `workspace/selection-changed` event.
+- `workspace.dialogs` (`WorkspaceDialogService`) — the host's native folder picker. Plugins cannot import Theia's file dialog (it needs the shell's parent window and platform quirks), so Projects asks for a folder through this instead of building a picker.
 
 Service and event ids live in `@icebox/plugin-api` (`WORKSPACE_SERVICE_IDS`, `WORKSPACE_EVENT_IDS`).

@@ -55,7 +55,7 @@ export function activate(api: FrontendPluginAPI): void {
 
     api.commands.register({
         id: COMMAND_OPEN,
-        title: 'Projects: Open Projects',
+        title: 'Open Projects',
         execute: () => api.panels.open(PANEL_PROJECTS)
     });
 }

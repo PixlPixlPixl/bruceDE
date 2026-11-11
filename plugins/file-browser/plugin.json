@@ -21,7 +21,7 @@
         "commands": [
             {
                 "id": "icebox.file-browser.open",
-                "title": "Files: Open Browser"
+                "title": "Open File Browser"
             }
         ],
         "services": [

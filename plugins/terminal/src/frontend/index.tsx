@@ -13,7 +13,7 @@ const PANEL_TERMINAL = 'terminal.main';
  * The plugin does not build a terminal widget and never imports Theia internals:
  * it adopts the host's `icebox.terminal` capability, so the host's own terminal
  * code creates, renders, persists and disposes the widget. The built-in
- * `Terminal: New Terminal` command goes through exactly the same host code path.
+ * `Open Terminal` command goes through exactly the same host code path.
  */
 export function activate(api: FrontendPluginAPI): PluginDisposer {
     const capability = HOST_PANEL_CAPABILITIES.terminal;
@@ -32,7 +32,7 @@ export function activate(api: FrontendPluginAPI): PluginDisposer {
 
     api.commands.register({
         id: COMMAND_NEW,
-        title: 'Terminal: New Terminal',
+        title: 'Open Terminal',
         execute: () => api.panels.open(PANEL_TERMINAL)
     });
 

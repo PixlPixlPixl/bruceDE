@@ -110,7 +110,7 @@ export function activate(api: FrontendPluginAPI): void {
 
     api.commands.register({
         id: COMMAND_OPEN,
-        title: 'Agent: Open Chat',
+        title: 'Open Agent Chat',
         execute: async () => {
             const agents = await sessions.listAgents();
             const first = availableAgents(agents)[0];

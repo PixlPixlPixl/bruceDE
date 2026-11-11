@@ -17,6 +17,7 @@ import { WorkspacePanelRegistry } from '../workspace-panel-registry.js';
 import { WorkspaceSelectionService } from '../workspace-selection-service.js';
 import { WorkspaceResourceService } from '../workspace-resource-service.js';
 import { WorkspaceDialogService } from '../workspace-dialog-service.js';
+import { WorkspacePalette } from '../workspace-palette.js';
 import { HostPanelFactoryRegistry } from '../host-panels/host-panel-factory-registry.js';
 import { PluginEventBus, PluginServiceRegistry } from './plugin-kernel.js';
 import { PluginFrontendHost } from './plugin-frontend-host.js';
@@ -67,6 +68,7 @@ export class PluginManager implements FrontendApplicationContribution {
         @inject(WorkspaceSelectionService) protected readonly selection: WorkspaceSelectionService,
         @inject(WorkspaceResourceService) protected readonly resources: WorkspaceResourceService,
         @inject(WorkspaceDialogService) protected readonly dialogs: WorkspaceDialogService,
+        @inject(WorkspacePalette) protected readonly palette: WorkspacePalette,
         @inject(HostPanelFactoryRegistry) protected readonly hostPanels: HostPanelFactoryRegistry,
         @inject(CommandRegistry) protected readonly commands: CommandRegistry,
         @inject(MessageService) protected readonly messages: MessageService,
@@ -79,6 +81,7 @@ export class PluginManager implements FrontendApplicationContribution {
             services: this.services,
             events: this.events,
             hostPanelFactories: this.hostPanels,
+            palette: this.palette,
             readBundleSource: (pluginId, frontendUrl) => this.readBundleSource(pluginId, frontendUrl),
             invokeRemote: (serviceId, method, args) => this.serviceBridge.invoke(serviceId, method, args),
             onError: (pluginId, error) => {

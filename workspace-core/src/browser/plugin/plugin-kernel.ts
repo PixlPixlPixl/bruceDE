@@ -19,6 +19,7 @@ import type { Message } from '@theia/core/lib/browser/widgets/widget';
 import type { DisposerBag } from '@icebox/plugin-runtime';
 import { PluginEventBus, PluginServiceRegistry } from '../../common/plugin-registries.js';
 import { WorkspaceDockingService } from '../workspace-docking-service.js';
+import type { WorkspacePalette } from '../workspace-palette.js';
 import { WorkspacePanelRegistry } from '../workspace-panel-registry.js';
 import type { HostPanelFactoryRegistry } from '../host-panels/host-panel-factory-registry.js';
 
@@ -58,6 +59,12 @@ export interface PluginKernelOptions {
     readonly events: PluginEventBus;
     /** Curated host capabilities a plugin may adopt without importing Theia. */
     readonly hostPanelFactories: HostPanelFactoryRegistry;
+    /**
+     * The F1 menu. Plugin commands are registered here as they are created, so
+     * the menu lists every plugin's panel command without the host keeping a
+     * list of plugin ids.
+     */
+    readonly palette: WorkspacePalette;
     /**
      * Invokes a service provided by a backend plugin over Theia's RPC channel.
      * When absent, `api.services.remote` reports that no bridge is configured.
@@ -173,6 +180,8 @@ export class PluginKernel {
                     { id: command.id, label: command.title },
                     { execute: (...args: unknown[]) => command.execute(...args) }
                 );
+                const menuEntry = this.options.palette.include(command.id);
+                bag.add(() => menuEntry.dispose());
                 const dispose = () => disposable.dispose();
                 bag.add(dispose);
                 return dispose;

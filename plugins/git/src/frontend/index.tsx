@@ -47,7 +47,7 @@ export function activate(api: FrontendPluginAPI): void {
 
     api.commands.register({
         id: COMMAND_OPEN,
-        title: 'Git: Open Changes',
+        title: 'Open Git',
         execute: () => api.panels.open(PANEL_GIT)
     });
 }

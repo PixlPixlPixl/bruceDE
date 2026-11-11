@@ -22,7 +22,7 @@
         "commands": [
             {
                 "id": "icebox.projects.open",
-                "title": "Projects: Open Projects"
+                "title": "Open Projects"
             }
         ],
         "services": [

@@ -23,6 +23,10 @@ import { WorkspaceDockingService } from './workspace-docking-service.js';
 import { WorkspaceSelectionService } from './workspace-selection-service.js';
 import { WorkspaceResourceService } from './workspace-resource-service.js';
 import { WorkspaceDialogService } from './workspace-dialog-service.js';
+import { WorkspacePalette } from './workspace-palette.js';
+import { WorkspaceQuickCommandService } from './workspace-quick-command-service.js';
+import { WorkspaceLayoutService } from './workspace-layout-service.js';
+import { QuickCommandService } from '@theia/core/lib/browser/quick-input/quick-command-service';
 import {
     PLUGIN_HOST_PATH,
     PLUGIN_SERVICE_RPC_PATH,
@@ -59,6 +63,12 @@ export default new ContainerModule((bind, _unbind, _isBound, rebind) => {
     bind(WorkspaceSelectionService).toSelf().inSingletonScope();
     bind(WorkspaceResourceService).toSelf().inSingletonScope();
     bind(WorkspaceDialogService).toSelf().inSingletonScope();
+    bind(WorkspacePalette).toSelf().inSingletonScope();
+    // F1 is the workspace menu, so the stock palette service is replaced with
+    // one that lists only what the palette holds.
+    rebind(QuickCommandService).to(WorkspaceQuickCommandService).inSingletonScope();
+    bind(WorkspaceLayoutService).toSelf().inSingletonScope();
+    bind(CommandContribution).toService(WorkspaceLayoutService);
 
     // Plugin host: shared registries, the manager, and its UI/commands.
     bind(PluginServiceRegistry).toSelf().inSingletonScope();

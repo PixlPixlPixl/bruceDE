@@ -41,7 +41,7 @@ Scanned on start, in order: `$ICEBOX_PLUGINS_DIR` → `<appPath>/../plugins` →
 - Folders under `~/.icebox/plugins` are **third-party**: disabled until the user
   accepts the full-system-access warning in the plugin manager.
 - Problems never block startup. They surface as diagnostics in the plugin manager
-  (`Plugins: Open Plugin Manager`) and in the backend log with `[plugin-host]`
+  (`Open Plugin Manager`) and in the backend log with `[plugin-host]`
   prefixes. Check there first when a plugin does not appear.
 
 ## plugin.json
@@ -56,7 +56,7 @@ Scanned on start, in order: `$ICEBOX_PLUGINS_DIR` → `<appPath>/../plugins` →
   "dependencies": { "icebox.workspace": "^0.1.0" },
   "contributes": {
     "panels": [{ "id": "terminal.main", "title": "Terminal" }],
-    "commands": [{ "id": "icebox.terminal.open", "title": "Terminal: New Terminal" }],
+    "commands": [{ "id": "icebox.terminal.open", "title": "Open Terminal" }],
     "services": ["terminal.sessions"]
   }
 }
@@ -73,6 +73,11 @@ Validation is strict and runs before any code is imported:
 - `dependencies`: map of plugin id → version range. `icebox.workspace` is the host
   and always satisfied; any other id must resolve to a discovered plugin whose
   `version` satisfies the range, or a diagnostic is raised.
+- `contributes.commands[].title`: the F1 menu label, verbatim. The F1 menu holds
+  only panel commands and the layout commands, so a title must read as an action
+  on the plugin (`Open Git`), never as a category (`Git: Open Changes`). Every
+  command a plugin registers through `api.commands.register` joins the menu
+  automatically; nothing else does.
 - `contributes`: declaration only — it lets the manager show capabilities before
   activation. The authoritative registration is `api.panels.register` etc. in
   `activate`.
@@ -162,7 +167,7 @@ export function activate(api: FrontendPluginAPI): void {
     });
     api.commands.register({
         id: 'icebox.files.open',
-        title: 'Files: Open Browser',
+        title: 'Open File Browser',
         execute: () => api.panels.open('main')
     });
 }
@@ -184,7 +189,7 @@ api.panels.registerHostPanel({
 });
 api.commands.register({
     id: 'icebox.terminal.open',
-    title: 'Terminal: New Terminal',
+    title: 'Open Terminal',
     execute: () => api.panels.open('terminal.main')
 });
 ```
@@ -197,7 +202,7 @@ throw) so a host without that capability fails loudly instead of showing an empt
 panel.
 
 Available today: `HOST_PANEL_CAPABILITIES.terminal` (`icebox.terminal`) — the
-host's native terminal, the same widget the built-in `Terminal: New Terminal`
+host's native terminal, the same widget the built-in `Open Terminal`
 command creates. New capabilities are added host-side; a plugin cannot define one.
 
 ### Who owns what
@@ -286,7 +291,7 @@ It throws in backend code — backend plugins use `get` in-process.
 - [ ] `plugin.json` valid: namespaced id, semver, `apiVersion: 1`, existing
       bundles under `dist/`
 - [ ] `npm run build:plugins` succeeds; `dist/` not committed
-- [ ] plugin appears in `Plugins: Open Plugin Manager` with no diagnostics
+- [ ] plugin appears in `Open Plugin Manager` with no diagnostics
 - [ ] its open command docks a panel into the shared main area, and the panel
       paints content (a widget only renders when `update()` is requested —
       `host.createReactWidget` already does this on attach; call `widget.update()`

@@ -21,7 +21,7 @@
         "commands": [
             {
                 "id": "icebox.git.open",
-                "title": "Git: Open Changes"
+                "title": "Open Git"
             }
         ],
         "services": [

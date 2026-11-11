@@ -21,7 +21,7 @@
         "commands": [
             {
                 "id": "icebox.terminal.open",
-                "title": "Terminal: New Terminal"
+                "title": "Open Terminal"
             }
         ]
     }

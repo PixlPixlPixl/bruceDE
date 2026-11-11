@@ -53,7 +53,7 @@ export function activate(api: FrontendPluginAPI): void {
 
     api.commands.register({
         id: COMMAND_OPEN,
-        title: 'Files: Open Browser',
+        title: 'Open File Browser',
         execute: () => api.panels.open(PANEL_FILES)
     });
 }

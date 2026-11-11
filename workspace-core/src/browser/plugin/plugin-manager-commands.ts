@@ -6,10 +6,11 @@ import { ApplicationShell } from '@theia/core/lib/browser/shell/application-shel
 import type { PluginHostSnapshot } from '../../common/plugin-host-protocol.js';
 import { PluginManager } from './plugin-manager.js';
 import { PluginManagerWidget } from './plugin-manager-widget.js';
+import { WorkspacePalette } from '../workspace-palette.js';
 
 const OPEN_PLUGIN_MANAGER: Command = {
     id: 'icebox.plugins.openManager',
-    label: nls.localize('icebox/pluginManager', 'Plugins: Open Plugin Manager')
+    label: nls.localize('icebox/pluginManager', 'Open Plugin Manager')
 };
 
 const ENABLE_PLUGIN_PREFIX = 'icebox.plugins.enable.';
@@ -17,8 +18,11 @@ const DISABLE_PLUGIN_PREFIX = 'icebox.plugins.disable.';
 
 /**
  * Registers the plugin manager command plus one enable/disable command per
- * discovered plugin, so plugins can be toggled from the command palette before
- * the manager widget is opened.
+ * discovered plugin, so a plugin can be toggled without opening the manager.
+ *
+ * Only the manager's own command joins the F1 menu. Enabling and disabling is
+ * a setting, and settings belong in the application's UI; the enable/disable
+ * commands stay registered so a keybinding or a future panel can use them.
  */
 @injectable()
 export class PluginManagerCommands implements CommandContribution {
@@ -28,7 +32,8 @@ export class PluginManagerCommands implements CommandContribution {
     constructor(
         @inject(PluginManager) protected readonly manager: PluginManager,
         @inject(WidgetManager) protected readonly widgets: WidgetManager,
-        @inject(ApplicationShell) protected readonly shell: ApplicationShell
+        @inject(ApplicationShell) protected readonly shell: ApplicationShell,
+        @inject(WorkspacePalette) protected readonly palette: WorkspacePalette
     ) { }
 
     registerCommands(commands: CommandRegistry): void {
@@ -36,6 +41,7 @@ export class PluginManagerCommands implements CommandContribution {
         commands.registerCommand(OPEN_PLUGIN_MANAGER, {
             execute: () => this.openManager()
         });
+        this.palette.include(OPEN_PLUGIN_MANAGER.id);
         const snapshot = this.manager.getSnapshot();
         if (snapshot) {
             this.registerPluginCommands(snapshot);
