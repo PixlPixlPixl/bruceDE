@@ -465,6 +465,78 @@ check(
     'the session logic is duplicated per protocol'
 );
 
+console.log('agent chat model, usage and command surfaces');
+check(
+    'a bound chat always opens another tab from the + picker',
+    agentChatFrontend.includes("mode: 'tab-after'")
+        && !agentChatFrontend.includes('if (agent.id === agentId) {'),
+    'choosing the current agent again would do nothing'
+);
+check(
+    'the session snapshot carries model, usage, commands and capabilities',
+    ['readonly model?: AgentModelState', 'readonly usage?: AgentUsageInfo',
+        'readonly commands?: readonly AgentCommand[]', 'readonly capabilities?: AgentCapabilities']
+        .every(token => agentChatShared.includes(token)),
+    'the renderer cannot show model or usage labels'
+);
+check(
+    'usage is described as a cache hit rate over input tokens',
+    agentChatShared.includes('cacheRead / (input + cacheRead)'),
+    'the cache percentage has no stated definition'
+);
+check(
+    'the model catalogue is fetched on demand, not with every poll',
+    agentChatShared.includes('readonly modelCount?: number')
+        && agentChatShared.includes('searchModels(sessionId: string, query: string, limit?: number)')
+        && !agentChatShared.includes('readonly models?: readonly AgentModelInfo[]'),
+    'thousands of models would travel with every state poll'
+);
+check(
+    'the service exposes model, thinking and shell operations',
+    ['selectModel(sessionId: string, modelKey: string)',
+        'selectThinking(sessionId: string, level: string)',
+        'runShell(sessionId: string, command: string)']
+        .every(token => agentChatShared.includes(token)),
+    'the panel cannot change the model or run a shell command'
+);
+check(
+    'the Pi client drives model, thinking, stats and command introspection',
+    ['get_available_models', 'get_available_thinking_levels', 'get_session_stats', 'get_commands',
+        'set_model', 'set_thinking_level', 'type: \'bash\''].every(token => agentChatBackend.includes(token)),
+    'the labels have no data source'
+);
+const acpSource = await readSource('plugins/agent-chat/src/acp.ts');
+check(
+    'ACP model selection and commands are read from what the agent advertises',
+    acpSource.includes("'session/set_model'")
+        && agentChatBackend.includes('available_commands_update')
+        && agentChatBackend.includes('created.models?.availableModels'),
+    'ACP agents would be offered models they never listed'
+);
+check(
+    'only protocols that can do something advertise it',
+    agentChatBackend.includes('capabilities: { shell: false }')
+        && agentChatBackend.includes('capabilities: { shell: true }'),
+    'the shell trigger would claim a capability the agent lacks'
+);
+check(
+    '@ mentions are inlined by the plugin because RPC does not expand them',
+    agentChatBackend.includes('inlineMentions'),
+    'an @ mention would reach the agent as inert text'
+);
+check(
+    'the composer opens /, @ and ! completions',
+    agentChatFrontend.includes('tokenAt(value, caret)')
+        && agentChatFrontend.includes("trigger === '/'") && agentChatFrontend.includes("trigger === '@'")
+        && agentChatFrontend.includes("type CompletionKind = 'command' | 'file' | 'shell'"),
+    'the composer offers no completion menu'
+);
+check(
+    'a completion menu is dismissed by its backdrop, not a document listener',
+    agentChatFrontend.includes('PICKER_BACKDROP_STYLE') && !agentChatFrontend.includes("addEventListener('mousedown'"),
+    'a document mousedown listener would swallow the click on a row'
+);
+
 console.log('install and build scripts avoid Windows shims');
 {
     // `node_modules/.bin` wrappers are .cmd files on Windows whose last line is

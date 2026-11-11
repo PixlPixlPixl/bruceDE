@@ -1,18 +1,34 @@
+import path from 'node:path';
+import { readFile } from 'node:fs/promises';
 import type { BackendPluginAPI } from '@brucede/plugin-api';
 import { WORKSPACE_SERVICE_IDS } from '@brucede/plugin-api';
-import { AcpClient, AcpConnection } from '../acp.js';
+import { AcpClient, AcpConnection, type AcpModelInfo, type AcpPromptUsage } from '../acp.js';
 import { PiRpcConnection } from '../pi-rpc.js';
 import { executableExists } from '../spawn.js';
 import type {
+    AgentCapabilities,
+    AgentCommand,
     AgentDescriptor,
+    AgentModelInfo,
+    AgentModelState,
     AgentProtocol,
     AgentSessionsService,
     AgentState,
+    AgentUsageInfo,
     ChatEntry
 } from '../shared.js';
 
 /** Transcripts are capped so a long session cannot flood the RPC channel. */
 const MAX_ENTRIES = 400;
+/** Models returned by one `searchModels` call when the caller does not say. */
+const DEFAULT_MODEL_LIMIT = 40;
+/** Pi lists thousands of models; a picker never needs more than this. */
+const MAX_MODEL_LIMIT = 200;
+/** Shell passthrough may run as long as a real build; the poll keeps the UI live. */
+const SHELL_TIMEOUT_MS = 300_000;
+/** Bounded so an attachment cannot blow up the agent's context window. */
+const MAX_ATTACHMENT_BYTES = 200_000;
+const MAX_ATTACHMENTS_BYTES = 400_000;
 
 /**
  * Agent CLIs this plugin knows how to drive.
@@ -37,12 +53,77 @@ const KNOWN_AGENTS: readonly AgentCandidate[] = [
 
 type AgentCandidate = Omit<AgentDescriptor, 'available'>;
 
+/** One model as Pi reports it (`get_state`, `get_available_models`). */
+interface PiModel {
+    readonly id?: unknown;
+    readonly name?: unknown;
+    readonly provider?: unknown;
+    readonly contextWindow?: unknown;
+}
+
+/** `get_state` payload; only the fields this panel reads are named. */
+interface PiState {
+    readonly model?: PiModel;
+    readonly thinkingLevel?: unknown;
+}
+
+/** `get_session_stats` payload. */
+interface PiStats {
+    readonly tokens?: {
+        readonly input?: unknown;
+        readonly output?: unknown;
+        readonly cacheRead?: unknown;
+        readonly cacheWrite?: unknown;
+        readonly total?: unknown;
+    };
+    readonly cost?: unknown;
+    readonly contextUsage?: {
+        readonly tokens?: unknown;
+        readonly contextWindow?: unknown;
+        readonly percent?: unknown;
+    };
+}
+
+/** Result of Pi's `bash` command. */
+interface PiBashResult {
+    readonly output?: unknown;
+    readonly exitCode?: unknown;
+    readonly cancelled?: unknown;
+    readonly truncated?: unknown;
+    readonly fullOutputPath?: unknown;
+}
+
+/** Output of one shell command, as the panel records it. */
+interface ShellResult {
+    readonly text: string;
+    readonly failed: boolean;
+}
+
+/**
+ * Capabilities a protocol exposes beyond prompting.
+ *
+ * Everything here is optional *by protocol*, not by claim: an agent that lists
+ * no models simply has no model picker, one that never reports usage has no
+ * usage chips, and ACP agents have no shell passthrough unless they add one.
+ */
+interface AgentIntrospection {
+    /** Current model, thinking level and the models on offer. */
+    refreshModels(): Promise<AgentModelState | undefined>;
+    /** Token accounting of the session, when the agent reports it. */
+    refreshUsage(): Promise<AgentUsageInfo | undefined>;
+    /** Commands the agent accepts as `/name`. */
+    refreshCommands(): Promise<readonly AgentCommand[]>;
+    selectModel(model: AgentModelInfo): Promise<void>;
+    selectThinking?(level: string): Promise<void>;
+    shell?(command: string): Promise<ShellResult>;
+}
+
 /**
  * One running agent conversation, protocol-independent.
  *
  * The session bookkeeping (status, transcript, error handling) is identical for
  * both protocols, so it lives in one place and each protocol only has to
- * implement start/prompt/cancel/dispose.
+ * implement start/prompt/cancel/dispose plus whatever introspection it supports.
  */
 interface AgentLink {
     readonly alive: boolean;
@@ -52,6 +133,8 @@ interface AgentLink {
     cancel(): void;
     /** Releases the child process. */
     dispose(): void;
+    readonly capabilities: AgentCapabilities;
+    readonly introspect?: AgentIntrospection;
 }
 
 interface LiveSession {
@@ -62,6 +145,12 @@ interface LiveSession {
     status: AgentState['status'];
     entries: ChatEntry[];
     error?: string;
+    cwd: string;
+    model?: AgentModelState;
+    usage?: AgentUsageInfo;
+    commands: readonly AgentCommand[];
+    /** Models of the current agent, kept for `searchModels` and `selectModel`. */
+    models: readonly AgentModelInfo[];
     /** State of the transcript under streaming updates. */
     streamingText: boolean;
 }
@@ -91,7 +180,12 @@ export function activate(api: BackendPluginAPI): void {
         agentId: session.agentId,
         status: session.status,
         entries: [...session.entries],
-        error: session.error
+        error: session.error,
+        cwd: session.cwd,
+        capabilities: session.link?.capabilities,
+        model: session.model,
+        usage: session.usage,
+        commands: session.commands
     });
 
     const sessionFor = (sessionId: string): LiveSession => {
@@ -106,6 +200,9 @@ export function activate(api: BackendPluginAPI): void {
             agentId: '',
             status: 'idle',
             entries: [],
+            cwd,
+            commands: [],
+            models: [],
             streamingText: false
         };
         sessions.set(sessionId, created);
@@ -131,6 +228,26 @@ export function activate(api: BackendPluginAPI): void {
             session.status = 'idle';
             session.error = undefined;
             session.streamingText = false;
+            session.model = undefined;
+            session.usage = undefined;
+            session.commands = [];
+            session.models = [];
+            // Start straight away: the model and command labels are only
+            // meaningful once the agent is up, and the user opened this tab to
+            // talk to it. The process is released when the tab closes.
+            if (executableExists(agent.command)) {
+                void ensureStarted(session, cwd)
+                    .then(async link => {
+                        await refreshIntrospection(session, link);
+                        // `ensureStarted` marks the session `starting`; a start
+                        // that succeeds without a prompt must settle back to idle,
+                        // or `send` would refuse the first message.
+                        if (session.status === 'starting') {
+                            session.status = 'idle';
+                        }
+                    })
+                    .catch(error => failSession(session, error));
+            }
             return snapshot(session);
         },
 
@@ -158,7 +275,8 @@ export function activate(api: BackendPluginAPI): void {
             session.streamingText = false;
             session.status = 'running';
             session.error = undefined;
-            void runTurn(session, cwd, text).catch(() => undefined);
+            const prompt = await inlineMentions(text, session);
+            void runTurn(session, prompt).catch(() => undefined);
             return snapshot(session);
         },
 
@@ -180,6 +298,7 @@ export function activate(api: BackendPluginAPI): void {
             session.status = 'idle';
             session.error = undefined;
             session.streamingText = false;
+            session.usage = undefined;
             return snapshot(session);
         },
 
@@ -190,6 +309,66 @@ export function activate(api: BackendPluginAPI): void {
             }
             session.link?.dispose();
             sessions.delete(sessionId);
+        },
+
+        searchModels: async (sessionId, query, limit) => {
+            const session = sessionFor(sessionId);
+            const capped = Math.min(Math.max(limit ?? DEFAULT_MODEL_LIMIT, 1), MAX_MODEL_LIMIT);
+            const needle = query.trim().toLowerCase();
+            const matches = needle
+                ? session.models.filter(model => modelSearchText(model).includes(needle))
+                : session.models;
+            return matches.slice(0, capped);
+        },
+
+        selectModel: async (sessionId, modelKey) => {
+            const session = sessionFor(sessionId);
+            const model = session.models.find(candidate => candidate.key === modelKey);
+            if (!model) {
+                throw new Error('That model is not offered by the connected agent.');
+            }
+            const introspect = session.link?.introspect;
+            if (!introspect) {
+                throw new Error('The agent is not running yet; model selection needs a live session.');
+            }
+            await guard(session, async () => {
+                await introspect.selectModel(model);
+                await refreshIntrospection(session, session.link);
+            });
+            return snapshot(session);
+        },
+
+        selectThinking: async (sessionId, level) => {
+            const session = sessionFor(sessionId);
+            const introspect = session.link?.introspect;
+            if (!introspect?.selectThinking) {
+                throw new Error('The connected agent does not expose thinking levels.');
+            }
+            await guard(session, async () => {
+                await introspect.selectThinking!(level);
+                await refreshIntrospection(session, session.link);
+            });
+            return snapshot(session);
+        },
+
+        runShell: async (sessionId, command) => {
+            const session = sessionFor(sessionId);
+            const introspect = session.link?.introspect;
+            if (!introspect?.shell) {
+                throw new Error('The connected agent has no shell passthrough.');
+            }
+            const trimmed = command.trim();
+            if (!trimmed) {
+                return snapshot(session);
+            }
+            if (session.status === 'running' || session.status === 'starting') {
+                throw new Error('This agent is still answering the previous prompt.');
+            }
+            pushEntry(session, { role: 'user', text: `! ${trimmed}` });
+            session.status = 'running';
+            session.error = undefined;
+            void runShellTurn(session, trimmed).catch(() => undefined);
+            return snapshot(session);
         }
     };
 
@@ -202,21 +381,59 @@ export function activate(api: BackendPluginAPI): void {
         }
     });
 
-    /** Starts the child (if needed) and runs exactly one prompt turn. */
-    async function runTurn(session: LiveSession, workingDirectory: string, text: string): Promise<void> {
+    /** Runs one shell command through the agent and records the result. */
+    async function runShellTurn(session: LiveSession, command: string): Promise<void> {
+        const introspect = session.link?.introspect;
+        if (!introspect?.shell) {
+            failSession(session, new Error('The connected agent has no shell passthrough.'));
+            return;
+        }
         try {
-            const link = await ensureStarted(session, workingDirectory);
-            await link.prompt(text);
+            const result = await introspect.shell(command);
+            pushEntry(session, { role: 'tool', text: result.text });
+            session.status = result.failed ? 'error' : 'idle';
+            session.error = result.failed ? `"${command}" failed.` : undefined;
+            await refreshUsage(session);
+        } catch (error) {
+            failSession(session, error);
+        }
+    }
+
+    /** Starts the child (if needed) and runs exactly one prompt turn. */
+    async function runTurn(session: LiveSession, prompt: string): Promise<void> {
+        try {
+            const link = await ensureStarted(session, session.cwd);
+            await link.prompt(prompt);
             // ACP resolves the prompt when the turn ends; Pi answers as soon as
             // it accepts the prompt and reports completion through events, so it
             // keeps the session `running` until `agent_settled`.
             if (session.agent?.protocol === 'acp') {
                 session.status = 'idle';
+                await refreshUsage(session);
             }
         } catch (error) {
-            session.status = 'error';
-            session.error = describeError(error);
-            pushEntry(session, { role: 'system', text: session.error });
+            failSession(session, error);
+        }
+    }
+
+    /** Reads whatever the link can report; missing pieces stay absent. */
+    async function refreshIntrospection(session: LiveSession, link: AgentLink | undefined): Promise<void> {
+        const introspect = link?.introspect;
+        if (!introspect) {
+            return;
+        }
+        const model = await introspect.refreshModels().catch(() => undefined);
+        if (model) {
+            session.model = { ...model, modelCount: session.models.length };
+        }
+        session.commands = await introspect.refreshCommands().catch(() => session.commands);
+        await refreshUsage(session);
+    }
+
+    async function refreshUsage(session: LiveSession): Promise<void> {
+        const usage = await session.link?.introspect?.refreshUsage().catch(() => undefined);
+        if (usage) {
+            session.usage = usage;
         }
     }
 
@@ -245,16 +462,27 @@ export function activate(api: BackendPluginAPI): void {
         agent: AgentDescriptor,
         workingDirectory: string
     ): Promise<AgentLink> {
+        let sessionId: string | undefined;
+        let modelState: AgentModelState | undefined;
+        let commands: AgentCommand[] = [];
+        let lastUsage: AgentUsageInfo | undefined;
+        let client: AcpClient | undefined;
         const connection = new AcpConnection(agent.command, agent.args, workingDirectory, {
             notification: (method, params) => {
                 if (method === 'session/update') {
+                    const update = params.update as Record<string, unknown> | undefined;
+                    if (update?.sessionUpdate === 'available_commands_update') {
+                        commands = parseAcpCommands(update);
+                        session.commands = commands;
+                        return;
+                    }
                     appendAcpUpdate(session, params);
                 }
             },
             request: async (method, params) => requestFromAgent(method, params),
             exit: reason => handleExit(session, reason)
         });
-        const client = new AcpClient(connection);
+        client = new AcpClient(connection);
         const initialized = await client.initialize();
         if (initialized.authMethods && initialized.authMethods.length > 0) {
             const methods = initialized.authMethods.map(method => method.name ?? method.id).join(', ');
@@ -264,16 +492,43 @@ export function activate(api: BackendPluginAPI): void {
                 + 'Log in with that agent CLI first, then reopen this chat.'
             );
         }
-        const sessionId = await client.newSession(workingDirectory);
+        const created = await client.newSession(workingDirectory);
+        sessionId = created.sessionId;
+        if (created.models?.availableModels?.length) {
+            modelState = {
+                current: created.models.currentModelId
+                    ? toAcpModel(created.models.currentModelId, created.models.availableModels)
+                    : undefined,
+                modelCount: created.models.availableModels.length
+            };
+            session.models = created.models.availableModels
+                .map(info => toAcpModelInfo(info))
+                .filter((info): info is AgentModelInfo => info !== undefined);
+        }
+        const live = client;
         return {
             get alive() {
                 return connection.alive;
             },
             prompt: async text => {
-                await client.prompt(sessionId, text);
+                const result = await live.prompt(sessionId!, text);
+                lastUsage = acpUsage(result.usage);
             },
-            cancel: () => client.cancel(sessionId),
-            dispose: () => connection.dispose()
+            cancel: () => live.cancel(sessionId!),
+            dispose: () => connection.dispose(),
+            capabilities: { shell: false },
+            introspect: {
+                refreshModels: async () => modelState,
+                refreshUsage: async () => lastUsage,
+                refreshCommands: async () => commands,
+                selectModel: async model => {
+                    if (!session.models.length) {
+                        throw new Error(`"${agent.name}" did not offer any models.`);
+                    }
+                    await live.setModel(sessionId!, model.modelId);
+                    modelState = { ...modelState, current: model, modelCount: session.models.length };
+                }
+            }
         };
     }
 
@@ -293,6 +548,18 @@ export function activate(api: BackendPluginAPI): void {
             connection.dispose();
             throw error;
         }
+
+        const loadModels = async (): Promise<AgentModelInfo[]> => {
+            const result = await connection.request<{ models?: readonly PiModel[] }>({
+                type: 'get_available_models'
+            });
+            const models = (result?.models ?? [])
+                .map(candidate => toPiModelInfo(candidate))
+                .filter((candidate): candidate is AgentModelInfo => candidate !== undefined);
+            session.models = models;
+            return models;
+        };
+
         return {
             get alive() {
                 return connection.alive;
@@ -301,19 +568,219 @@ export function activate(api: BackendPluginAPI): void {
                 await connection.prompt(text);
             },
             cancel: () => connection.abort(),
-            dispose: () => connection.dispose()
+            dispose: () => connection.dispose(),
+            capabilities: { shell: true },
+            introspect: {
+                refreshModels: async () => {
+                    const state = await connection.request<PiState>({ type: 'get_state' });
+                    const levels = await connection.request<{ levels?: readonly string[] }>({
+                        type: 'get_available_thinking_levels'
+                    });
+                    const models = await loadModels();
+                    return {
+                        current: toPiModelInfo(state?.model ?? {}),
+                        thinking: readString(state?.thinkingLevel),
+                        thinkingLevels: (levels?.levels ?? []).filter(level => typeof level === 'string'),
+                        modelCount: models.length
+                    };
+                },
+                refreshUsage: async () => piUsage(await connection.request<PiStats>({ type: 'get_session_stats' })),
+                refreshCommands: async () => {
+                    const result = await connection.request<{ commands?: readonly Record<string, unknown>[] }>({
+                        type: 'get_commands'
+                    });
+                    return (result?.commands ?? []).map(command => ({
+                        name: readString(command.name) ?? '',
+                        description: readString(command.description),
+                        source: readString(command.source)
+                    })).filter(command => command.name !== '');
+                },
+                selectModel: async model => {
+                    await connection.request({
+                        type: 'set_model',
+                        provider: model.provider ?? '',
+                        modelId: model.modelId
+                    });
+                },
+                selectThinking: async level => {
+                    await connection.request({ type: 'set_thinking_level', level });
+                },
+                shell: async command => {
+                    const result = await connection.request<PiBashResult>(
+                        { type: 'bash', command },
+                        SHELL_TIMEOUT_MS
+                    );
+                    const output = readString(result?.output) ?? '';
+                    const exitCode = typeof result?.exitCode === 'number' ? result.exitCode : undefined;
+                    const lines = [`$ ${command}`];
+                    if (output.trim()) {
+                        lines.push(output.trimEnd());
+                    }
+                    if (result?.truncated === true) {
+                        const full = readString(result?.fullOutputPath);
+                        lines.push(full ? `(truncated; full output: ${full})` : '(truncated)');
+                    }
+                    lines.push(exitCode === undefined ? '(no exit code)' : `(exit ${exitCode})`);
+                    return { text: lines.join('\n'), failed: (exitCode ?? 0) !== 0 };
+                }
+            }
         };
     }
 
     function handleExit(session: LiveSession, reason: string): void {
         session.link?.dispose();
         session.link = undefined;
+        failSession(session, new Error(reason));
+    }
+
+    function failSession(session: LiveSession, error: unknown): void {
         session.status = 'error';
-        session.error = reason;
-        pushEntry(session, { role: 'system', text: reason });
+        session.error = describeError(error);
+        pushEntry(session, { role: 'system', text: session.error });
+    }
+
+    /** Runs an operation that can fail, surfacing the error in the transcript. */
+    async function guard(session: LiveSession, operation: () => Promise<void>): Promise<void> {
+        try {
+            await operation();
+        } catch (error) {
+            failSession(session, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Inlines `@path` mentions into the prompt.
+     *
+     * The agent's interactive mode expands `@file` itself, but its RPC mode does
+     * not (`prompt` rejects `@file` arguments), so the plugin attaches the file
+     * content here. Anything that cannot be attached is reported in the
+     * transcript instead of silently disappearing.
+     */
+    async function inlineMentions(text: string, session: LiveSession): Promise<string> {
+        const mentions = [...text.matchAll(/@([^\s@]+)/g)]
+            .map(match => match[1])
+            .filter((value, index, all) => all.indexOf(value) === index);
+        if (mentions.length === 0) {
+            return text;
+        }
+        const attachments: string[] = [];
+        let budget = MAX_ATTACHMENTS_BYTES;
+        for (const mention of mentions) {
+            const resolved = path.isAbsolute(mention) ? mention : path.resolve(session.cwd, mention);
+            try {
+                const content = await readFile(resolved, 'utf8');
+                if (content.includes('\u0000')) {
+                    pushEntry(session, { role: 'system', text: `@${mention} is binary; not attached.` });
+                    continue;
+                }
+                if (content.length > MAX_ATTACHMENT_BYTES || content.length > budget) {
+                    pushEntry(session, { role: 'system', text: `@${mention} is too large to attach.` });
+                    continue;
+                }
+                budget -= content.length;
+                attachments.push(`<file path="${mention}">\n${content}\n</file>`);
+            } catch {
+                // A missing file is not fatal: the agent may create it, and its
+                // tools can still see the mention in the prompt text.
+                pushEntry(session, { role: 'system', text: `@${mention} could not be read; left as text.` });
+            }
+        }
+        if (attachments.length === 0) {
+            return text;
+        }
+        return `${attachments.join('\n\n')}\n\n${text}`;
     }
 }
 
+/** Lower-case text a model can be found by: name, id and provider. */
+function modelSearchText(model: AgentModelInfo): string {
+    return `${model.name} ${model.modelId} ${model.provider ?? ''}`.toLowerCase();
+}
+
+function toPiModelInfo(candidate: PiModel): AgentModelInfo | undefined {
+    const modelId = readString(candidate.id);
+    if (!modelId) {
+        return undefined;
+    }
+    const provider = readString(candidate.provider);
+    return {
+        key: `${provider ?? ''}:${modelId}`,
+        name: readString(candidate.name) ?? modelId,
+        provider,
+        modelId,
+        contextWindow: typeof candidate.contextWindow === 'number' ? candidate.contextWindow : undefined
+    };
+}
+
+function toAcpModelInfo(info: AcpModelInfo): AgentModelInfo | undefined {
+    const modelId = readString(info.modelId) ?? readString(info.id);
+    if (!modelId) {
+        return undefined;
+    }
+    return {
+        key: `acp:${modelId}`,
+        name: readString(info.name) ?? modelId,
+        modelId
+    };
+}
+
+function toAcpModel(modelId: string, available: readonly AcpModelInfo[]): AgentModelInfo | undefined {
+    const match = available.find(candidate => readString(candidate.modelId) === modelId);
+    return match ? toAcpModelInfo(match) : { key: `acp:${modelId}`, name: modelId, modelId };
+}
+
+function parseAcpCommands(update: Record<string, unknown>): AgentCommand[] {
+    const available = Array.isArray(update.availableCommands) ? update.availableCommands : [];
+    return available.map(entry => {
+        const record = entry as Record<string, unknown>;
+        return {
+            name: readString(record.name) ?? '',
+            description: readString(record.description),
+            source: 'acp'
+        };
+    }).filter(command => command.name !== '');
+}
+
+/** `get_session_stats` → the two numbers the footer shows. */
+function piUsage(stats: PiStats | undefined): AgentUsageInfo | undefined {
+    if (!stats) {
+        return undefined;
+    }
+    const tokens = stats.tokens;
+    const input = readNumber(tokens?.input);
+    const cacheRead = readNumber(tokens?.cacheRead);
+    const context = stats.contextUsage;
+    const contextTokens = readNumber(context?.tokens);
+    const cacheHitPercent = (input !== undefined && cacheRead !== undefined && input + cacheRead > 0)
+        ? (cacheRead / (input + cacheRead)) * 100
+        : undefined;
+    return {
+        contextTokens: contextTokens ?? null,
+        contextWindow: readNumber(context?.contextWindow),
+        contextPercent: readNumber(context?.percent) ?? null,
+        cacheHitPercent,
+        totalTokens: readNumber(tokens?.total),
+        cost: readNumber(stats.cost)
+    };
+}
+
+/** ACP reports prompt usage only when its version supports it. */
+function acpUsage(usage: AcpPromptUsage | undefined): AgentUsageInfo | undefined {
+    if (!usage) {
+        return undefined;
+    }
+    const input = readNumber(usage.inputTokens);
+    const cacheRead = readNumber(usage.cachedReadTokens);
+    const total = readNumber(usage.totalTokens);
+    const cacheHitPercent = (input !== undefined && cacheRead !== undefined && input + cacheRead > 0)
+        ? (cacheRead / (input + cacheRead)) * 100
+        : undefined;
+    if (total === undefined && cacheHitPercent === undefined) {
+        return undefined;
+    }
+    return { totalTokens: total, cacheHitPercent };
+}
 
 function appendAcpUpdate(session: LiveSession, params: Record<string, unknown>): void {
     const update = params.update as Record<string, unknown> | undefined;
@@ -546,6 +1013,14 @@ function readConfiguredAgents(): AgentCandidate[] | undefined {
 
 function isProtocol(value: unknown): value is AgentProtocol {
     return value === 'acp' || value === 'pi-rpc';
+}
+
+function readString(value: unknown): string | undefined {
+    return typeof value === 'string' ? value : undefined;
+}
+
+function readNumber(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function describeError(error: unknown): string {

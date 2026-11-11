@@ -94,6 +94,18 @@ export class PiRpcConnection {
     }
 
     /**
+     * Sends any other RPC command and resolves with its `data`.
+     *
+     * The protocol is command-per-line, so new capabilities (`get_commands`,
+     * `set_model`, `bash`, …) need no client changes: the caller names the command
+     * and reads the documented payload.
+     */
+    async request<T>(command: Record<string, unknown>, timeoutMs = COMMAND_TIMEOUT_MS): Promise<T> {
+        const response = await this.command(command, timeoutMs);
+        return response.data as T;
+    }
+
+    /**
      * Aborts the current run. Pi answers once the session is idle, so the caller
      * must not await this before returning control to the user.
      */

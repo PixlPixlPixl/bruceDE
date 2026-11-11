@@ -1,11 +1,29 @@
 import type * as ReactNS from 'react';
-import type { FrontendPluginAPI, PanelHostTools, PanelState } from '@brucede/plugin-api';
+import type {
+    FrontendPluginAPI,
+    PanelHostTools,
+    PanelState,
+    ResourceStat,
+    WorkspaceResourcesService
+} from '@brucede/plugin-api';
 import { WORKSPACE_SERVICE_IDS } from '@brucede/plugin-api';
-import type { AgentDescriptor, AgentSessionsService, AgentState } from '../shared.js';
+import type {
+    AgentCommand,
+    AgentDescriptor,
+    AgentModelInfo,
+    AgentSessionsService,
+    AgentState
+} from '../shared.js';
 
 const PANEL_CHAT = 'agent-chat.conversation';
 const COMMAND_OPEN = 'bruce.agent-chat.open';
 const POLL_INTERVAL_MS = 700;
+/** Rows offered by one search before the user has narrowed it down. */
+const MODEL_ROWS = 40;
+/** Completion rows rendered at once; the rest is reached by typing. */
+const COMPLETION_ROWS = 8;
+/** Files listed per `@` completion query. */
+const FILE_ROWS = 40;
 
 /**
  * Native renderer entrypoint for agent chat.
@@ -17,6 +35,7 @@ const POLL_INTERVAL_MS = 700;
  */
 export function activate(api: FrontendPluginAPI): void {
     const sessions = api.services.remote<AgentSessionsService>(WORKSPACE_SERVICE_IDS.agentSessions);
+    const resources = api.services.get<WorkspaceResourcesService>(WORKSPACE_SERVICE_IDS.resources);
 
     api.panels.register({
         id: PANEL_CHAT,
@@ -27,6 +46,7 @@ export function activate(api: FrontendPluginAPI): void {
                 host.React.createElement(AgentChat, {
                     React: host.React,
                     sessions,
+                    resources,
                     api,
                     instanceId,
                     initialAgentId: state?.agentId,
@@ -89,9 +109,46 @@ function unavailableAgents(agents: readonly AgentDescriptor[]): AgentDescriptor[
         .sort((left, right) => left.name.localeCompare(right.name));
 }
 
+/** Which trigger opened the composer's completion menu. */
+type CompletionKind = 'command' | 'file' | 'shell';
+
+interface CompletionItem {
+    /** Text inserted in place of the trigger token. */
+    readonly insert: string;
+    readonly label: string;
+    readonly detail?: string;
+}
+
+interface CompletionView {
+    readonly kind: CompletionKind;
+    /** Index of the trigger character in the composer value. */
+    readonly start: number;
+    readonly query: string;
+    readonly items: readonly CompletionItem[];
+    readonly selected: number;
+    readonly hint?: string;
+}
+
+/** The trigger token at the caret: `/`, `@` or `!` plus what follows it. */
+function tokenAt(value: string, caret: number): { kind: CompletionKind; start: number; query: string } | undefined {
+    const before = value.slice(0, caret);
+    const start = before.search(/[^\s]\S*$/);
+    if (start === -1) {
+        return undefined;
+    }
+    const token = before.slice(start);
+    const trigger = token[0];
+    if (trigger !== '/' && trigger !== '@' && trigger !== '!') {
+        return undefined;
+    }
+    const kind: CompletionKind = trigger === '/' ? 'command' : trigger === '@' ? 'file' : 'shell';
+    return { kind, start, query: token.slice(1) };
+}
+
 interface AgentChatProps {
     readonly React: PanelHostTools['React'];
     readonly sessions: AgentSessionsService;
+    readonly resources: WorkspaceResourcesService;
     readonly api: FrontendPluginAPI;
     readonly instanceId: string;
     readonly initialAgentId?: unknown;
@@ -100,7 +157,7 @@ interface AgentChatProps {
 
 /** One chat session: header with a new-chat picker, transcript, composer. */
 function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
-    const { React, sessions, api, instanceId, onAgentBound } = props;
+    const { React, sessions, api, instanceId, onAgentBound, resources } = props;
     const [agents, setAgents] = React.useState<readonly AgentDescriptor[]>([]);
     const [agentId, setAgentId] = React.useState<string | undefined>(
         typeof props.initialAgentId === 'string' ? props.initialAgentId : undefined
@@ -110,7 +167,14 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
     const [error, setError] = React.useState<string>();
     const [busy, setBusy] = React.useState(false);
     const [pickerOpen, setPickerOpen] = React.useState(false);
+    const [modelMenuOpen, setModelMenuOpen] = React.useState(false);
+    const [modelQuery, setModelQuery] = React.useState('');
+    const [modelRows, setModelRows] = React.useState<readonly AgentModelInfo[]>([]);
+    const [completion, setCompletion] = React.useState<CompletionView>();
     const scroller = React.useRef<HTMLDivElement>(null);
+    const composer = React.useRef<HTMLTextAreaElement>(null);
+    const pendingCaret = React.useRef<number | undefined>(undefined);
+    const fileLookup = React.useRef(0);
 
     React.useEffect(() => {
         let cancelled = false;
@@ -194,30 +258,57 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
         }
     }, [state?.entries.length, state?.status]);
 
-    // Escape closes the picker. Outside clicks are handled by the backdrop below:
-    // a document-level listener would dismiss on `mousedown`, before the `click`
-    // could land on the row the user aimed at.
+    // Restore the caret after a completion inserted text.
+    React.useLayoutEffect(() => {
+        const caret = pendingCaret.current;
+        const element = composer.current;
+        if (caret !== undefined && element) {
+            element.setSelectionRange(caret, caret);
+            pendingCaret.current = undefined;
+        }
+    }, [input]);
+
+    // Escape closes whichever menu is open. Outside clicks are handled by the
+    // backdrops below: a document-level listener would dismiss on `mousedown`,
+    // before the `click` could land on the row the user aimed at.
     React.useEffect(() => {
-        if (!pickerOpen) {
+        if (!pickerOpen && !modelMenuOpen && !completion) {
             return;
         }
         const onKeyDown = (event: KeyboardEvent): void => {
-            if (event.key === 'Escape') {
-                setPickerOpen(false);
+            if (event.key !== 'Escape') {
+                return;
             }
+            setPickerOpen(false);
+            setModelMenuOpen(false);
+            setCompletion(undefined);
         };
         document.addEventListener('keydown', onKeyDown);
         return () => document.removeEventListener('keydown', onKeyDown);
-    }, [pickerOpen]);
+    }, [pickerOpen, modelMenuOpen, completion]);
 
     const selected = agents.find(agent => agent.id === agentId);
+
+    // Model search runs in the backend: Pi reports thousands of models, so the
+    // picker asks for a filtered slice instead of holding the whole catalogue.
+    const searchModels = React.useCallback(
+        (query: string): void => {
+            if (!agentId) {
+                return;
+            }
+            void sessions.searchModels(instanceId, query, MODEL_ROWS)
+                .then(rows => setModelRows(rows))
+                .catch(() => setModelRows([]));
+        },
+        [agentId, instanceId, sessions]
+    );
 
     /**
      * Opens a chat for the chosen agent.
      *
-     * A panel that has no agent yet binds the choice in place; a panel that is
-     * already chatting opens a *new* tab next to itself, so the running session
-     * keeps its transcript and its agent process.
+     * The + button always means "another chat": a tab that is already bound
+     * opens a sibling tab, even for the same agent, so the running transcript
+     * stays where it is. Only a tab with no agent yet binds in place.
      */
     const pickAgent = (agent: AgentDescriptor): void => {
         setPickerOpen(false);
@@ -229,11 +320,128 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
             onAgentBound(agent.name);
             return;
         }
-        if (agent.id === agentId) {
-            return;
-        }
         const newState: PanelState = { agentId: agent.id };
         void api.panels.open(PANEL_CHAT, { ref: instanceId, mode: 'tab-after', state: newState });
+    };
+
+    const chooseModel = async (model: AgentModelInfo): Promise<void> => {
+        setModelMenuOpen(false);
+        try {
+            setState(await sessions.selectModel(instanceId, model.key));
+        } catch (cause) {
+            setError(cause instanceof Error ? cause.message : String(cause));
+        }
+    };
+
+    const chooseThinking = async (level: string): Promise<void> => {
+        try {
+            setState(await sessions.selectThinking(instanceId, level));
+        } catch (cause) {
+            setError(cause instanceof Error ? cause.message : String(cause));
+        }
+    };
+
+    /** Recomputes the completion menu for the caret position. */
+    const refreshCompletion = (value: string, caret: number): void => {
+        const token = tokenAt(value, caret);
+        if (!token) {
+            setCompletion(undefined);
+            return;
+        }
+        if (token.kind === 'command') {
+            const commands = state?.commands ?? [];
+            const needle = token.query.toLowerCase();
+            const items = commands
+                .filter(command => command.name.toLowerCase().startsWith(needle))
+                .slice()
+                .sort((left, right) => left.name.localeCompare(right.name))
+                .slice(0, COMPLETION_ROWS)
+                .map(command => commandItem(command));
+            setCompletion({
+                kind: 'command',
+                start: token.start,
+                query: token.query,
+                items,
+                selected: 0,
+                hint: commands.length === 0
+                    ? (agentId ? 'This agent reports no commands yet.' : 'Pick an agent first.')
+                    : undefined
+            });
+            return;
+        }
+        if (token.kind === 'shell') {
+            const shell = state?.capabilities?.shell === true;
+            setCompletion({
+                kind: 'shell',
+                start: token.start,
+                query: token.query,
+                items: [],
+                selected: 0,
+                hint: shell
+                    ? 'Runs in the agent\'s shell and joins the transcript. Press Enter to run it.'
+                    : 'The connected agent has no shell passthrough.'
+            });
+            return;
+        }
+        // `@`: list files from the host resource service, relative to the
+        // directory the agent works in.
+        const directory = state?.cwd;
+        if (!directory) {
+            setCompletion({
+                kind: 'file',
+                start: token.start,
+                query: token.query,
+                items: [],
+                selected: 0,
+                hint: 'Pick an agent first.'
+            });
+            return;
+        }
+        const lookup = fileLookup.current + 1;
+        fileLookup.current = lookup;
+        const slash = token.query.lastIndexOf('/');
+        const base = slash === -1 ? '' : token.query.slice(0, slash + 1);
+        const prefix = token.query.slice(slash + 1);
+        const absolute = `${directory}/${base}`.replace(/\/+$/, '') || directory;
+        void resources.list(resources.fromPath(absolute))
+            .then(entries => {
+                if (fileLookup.current !== lookup) {
+                    return;
+                }
+                setCompletion({
+                    kind: 'file',
+                    start: token.start,
+                    query: token.query,
+                    items: fileItems(entries, base, prefix),
+                    selected: 0
+                });
+            })
+            .catch(() => {
+                if (fileLookup.current === lookup) {
+                    setCompletion({
+                        kind: 'file',
+                        start: token.start,
+                        query: token.query,
+                        items: [],
+                        selected: 0,
+                        hint: `Cannot list ${base || directory}.`
+                    });
+                }
+            });
+    };
+
+    /** Replaces the trigger token with the chosen completion. */
+    const applyCompletion = (view: CompletionView, item: CompletionItem): void => {
+        const caret = composer.current?.selectionStart ?? input.length;
+        const next = `${input.slice(0, view.start)}${item.insert}${input.slice(caret)}`;
+        pendingCaret.current = view.start + item.insert.length;
+        setInput(next);
+        // A directory keeps the menu open so the user can descend into it.
+        if (item.insert.endsWith('/')) {
+            refreshCompletion(next, pendingCaret.current);
+        } else {
+            setCompletion(undefined);
+        }
     };
 
     const send = async (): Promise<void> => {
@@ -242,8 +450,13 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
             return;
         }
         setBusy(true);
+        setCompletion(undefined);
         try {
-            setState(await sessions.send(instanceId, text));
+            if (text.startsWith('!')) {
+                setState(await sessions.runShell(instanceId, text.slice(1)));
+            } else {
+                setState(await sessions.send(instanceId, text));
+            }
             setInput('');
             setError(undefined);
         } catch (cause) {
@@ -279,6 +492,8 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
     const running = state?.status === 'running' || state?.status === 'starting';
     const installed = availableAgents(agents);
     const missing = unavailableAgents(agents);
+    const modelState = state?.model;
+    const usage = state?.usage;
 
     return React.createElement(
         'div',
@@ -307,7 +522,7 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
                         {
                             type: 'button',
                             style: NEW_CHAT_BUTTON_STYLE,
-                            title: 'New chat with another agent',
+                            title: 'New chat',
                             'aria-label': 'New chat',
                             onClick: () => setPickerOpen(open => !open)
                         },
@@ -328,6 +543,10 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
                 onClick: () => setPickerOpen(false)
             })
             : undefined,
+        modelMenuOpen ? React.createElement('div', {
+            style: PICKER_BACKDROP_STYLE,
+            onClick: () => setModelMenuOpen(false)
+        }) : undefined,
         error ? React.createElement('div', { style: ERROR_STYLE }, error) : undefined,
         React.createElement(
             'div',
@@ -353,44 +572,104 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
         ),
         React.createElement(
             'div',
-            { style: COMPOSER_STYLE },
-            React.createElement('textarea', {
-                value: input,
-                placeholder: agentId ? 'Ask the agent…' : 'Pick an agent with + first',
-                rows: 3,
-                style: INPUT_STYLE,
-                disabled: !agentId,
-                onChange: (event: ReactNS.ChangeEvent<HTMLTextAreaElement>) => setInput(event.target.value),
-                onKeyDown: (event: ReactNS.KeyboardEvent<HTMLTextAreaElement>) => {
-                    if (event.key === 'Enter' && !event.shiftKey) {
-                        event.preventDefault();
-                        void send();
-                    }
-                }
-            }),
+            { style: { position: 'relative' } },
+            completion
+                ? renderCompletion(React, completion, item => applyCompletion(completion, item))
+                : undefined,
             React.createElement(
                 'div',
-                { style: { display: 'flex', gap: '6px', marginTop: '6px' } },
-                React.createElement(
-                    'button',
-                    {
-                        type: 'button',
-                        style: PRIMARY_BUTTON_STYLE,
-                        onClick: () => void send(),
-                        disabled: !agentId || busy
+                { style: COMPOSER_STYLE },
+                React.createElement('textarea', {
+                    ref: composer,
+                    value: input,
+                    placeholder: agentId
+                        ? 'Ask the agent…  /commands, @files, !shell'
+                        : 'Pick an agent with + first',
+                    rows: 3,
+                    style: INPUT_STYLE,
+                    disabled: !agentId,
+                    onChange: (event: ReactNS.ChangeEvent<HTMLTextAreaElement>) => {
+                        const value = event.target.value;
+                        const caret = event.target.selectionStart ?? value.length;
+                        setInput(value);
+                        refreshCompletion(value, caret);
                     },
-                    'Send'
+                    onKeyDown: (event: ReactNS.KeyboardEvent<HTMLTextAreaElement>) => {
+                        if (completion && completion.items.length > 0) {
+                            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                                event.preventDefault();
+                                const delta = event.key === 'ArrowDown' ? 1 : -1;
+                                setCompletion({
+                                    ...completion,
+                                    selected: (completion.selected + delta + completion.items.length)
+                                        % completion.items.length
+                                });
+                                return;
+                            }
+                            if (event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey)) {
+                                event.preventDefault();
+                                applyCompletion(completion, completion.items[completion.selected]);
+                                return;
+                            }
+                        }
+                        if (event.key === 'Enter' && !event.shiftKey) {
+                            event.preventDefault();
+                            void send();
+                        }
+                    }
+                }),
+                React.createElement(
+                    'div',
+                    { style: FOOTER_STYLE },
+                    React.createElement(
+                        'div',
+                        { style: { display: 'flex', gap: '6px' } },
+                        React.createElement(
+                            'button',
+                            {
+                                type: 'button',
+                                style: PRIMARY_BUTTON_STYLE,
+                                onClick: () => void send(),
+                                disabled: !agentId || busy
+                            },
+                            'Send'
+                        ),
+                        React.createElement(
+                            'button',
+                            {
+                                type: 'button',
+                                style: BUTTON_STYLE,
+                                onClick: () => void cancel(),
+                                disabled: !running
+                            },
+                            'Cancel'
+                        )
+                    ),
+                    React.createElement(
+                        'div',
+                        { style: STATUS_ROW_STYLE },
+                        renderModelChip(React, modelState, () => {
+                            setModelMenuOpen(open => !open);
+                            setModelQuery('');
+                            searchModels('');
+                        }),
+                        renderContextChip(React, usage),
+                        renderCacheChip(React, usage)
+                    )
                 ),
-                React.createElement(
-                    'button',
-                    {
-                        type: 'button',
-                        style: BUTTON_STYLE,
-                        onClick: () => void cancel(),
-                        disabled: !running
-                    },
-                    'Cancel'
-                )
+                modelMenuOpen
+                    ? renderModelMenu(React, {
+                        model: modelState,
+                        query: modelQuery,
+                        rows: modelRows,
+                        onQuery: next => {
+                            setModelQuery(next);
+                            searchModels(next);
+                        },
+                        onModel: model => void chooseModel(model),
+                        onThinking: level => void chooseThinking(level)
+                    })
+                    : undefined
             )
         )
     );
@@ -432,6 +711,215 @@ function renderPicker(
             : undefined,
         missing.map(agent => row(agent, false))
     );
+}
+
+/** Model + thinking chip: the entry point of the model menu. */
+function renderModelChip(
+    React: PanelHostTools['React'],
+    model: AgentState['model'],
+    open: () => void
+): ReactNS.ReactNode {
+    const label = model?.current
+        ? `${model.current.name}${model.thinking ? ` · ${model.thinking}` : ''}`
+        : 'model —';
+    const detail = model?.current
+        ? [
+            model.current.provider ? `provider ${model.current.provider}` : undefined,
+            model.current.contextWindow ? `window ${formatTokens(model.current.contextWindow)}` : undefined,
+            model.thinking ? `thinking ${model.thinking}` : undefined,
+            model.modelCount ? `${model.modelCount} models available` : undefined
+        ].filter(Boolean).join('\n')
+        : 'No model reported yet: the agent is not running, or it does not expose model selection.';
+    return React.createElement(
+        'button',
+        {
+            type: 'button',
+            style: STATUS_CHIP_STYLE,
+            title: `${detail}\n\nClick to choose a model or thinking level.`,
+            onClick: open
+        },
+        label
+    );
+}
+
+/** Context window usage: percent, with the raw numbers in the tooltip. */
+function renderContextChip(React: PanelHostTools['React'], usage: AgentState['usage']): ReactNS.ReactNode {
+    const percent = usage?.contextPercent;
+    const known = typeof percent === 'number' && Number.isFinite(percent);
+    const label = known ? `ctx ${Math.round(percent)}%` : 'ctx —';
+    const detail = usage?.contextTokens === null || usage?.contextTokens === undefined
+        ? 'The agent reports context usage after its next reply.'
+        : `${formatTokens(usage.contextTokens)} of ${formatTokens(usage.contextWindow)} tokens used`;
+    return React.createElement(
+        'span',
+        { style: STATUS_CHIP_STYLE, title: detail },
+        label
+    );
+}
+
+/** Cache hit share of the session's input tokens. */
+function renderCacheChip(React: PanelHostTools['React'], usage: AgentState['usage']): ReactNS.ReactNode {
+    const percent = usage?.cacheHitPercent;
+    const known = typeof percent === 'number' && Number.isFinite(percent);
+    return React.createElement(
+        'span',
+        {
+            style: STATUS_CHIP_STYLE,
+            title: 'Share of input tokens served from the provider cache (cacheRead / input + cacheRead).'
+        },
+        known ? `cache ${Math.round(percent)}%` : 'cache —'
+    );
+}
+
+interface ModelMenuProps {
+    readonly model: AgentState['model'];
+    readonly query: string;
+    readonly rows: readonly AgentModelInfo[];
+    readonly onQuery: (query: string) => void;
+    readonly onModel: (model: AgentModelInfo) => void;
+    readonly onThinking: (level: string) => void;
+}
+
+/** Model and thinking picker for the connected agent. */
+function renderModelMenu(React: PanelHostTools['React'], props: ModelMenuProps): ReactNS.ReactNode {
+    const { model, query, rows, onQuery, onModel, onThinking } = props;
+    const levels = model?.thinkingLevels ?? [];
+    const current = model?.current;
+
+    return React.createElement(
+        'div',
+        { style: MODEL_MENU_STYLE },
+        React.createElement('div', { style: PICKER_GROUP_STYLE }, 'Thinking'),
+        levels.length > 0
+            ? React.createElement(
+                'div',
+                { style: { display: 'flex', flexWrap: 'wrap', gap: '4px', padding: '2px 6px 6px' } },
+                levels.map(level => React.createElement(
+                    'button',
+                    {
+                        key: level,
+                        type: 'button',
+                        style: {
+                            ...THINKING_CHIP_STYLE,
+                            ...(level === model?.thinking ? THINKING_CHIP_ACTIVE_STYLE : {})
+                        },
+                        title: `Set thinking level to ${level}`,
+                        onClick: () => onThinking(level)
+                    },
+                    level
+                ))
+            )
+            : React.createElement(
+                'div',
+                { style: PICKER_EMPTY_STYLE },
+                'The connected agent reports no reasoning levels.'
+            ),
+        React.createElement('div', { style: PICKER_GROUP_STYLE },
+            model?.modelCount ? `Model · ${model.modelCount} available` : 'Model'),
+        React.createElement('input', {
+            value: query,
+            placeholder: 'Filter by name, id or provider',
+            style: MODEL_FILTER_STYLE,
+            onChange: (event: ReactNS.ChangeEvent<HTMLInputElement>) => onQuery(event.target.value)
+        }),
+        rows.length > 0
+            ? rows.map(row => React.createElement(
+                'button',
+                {
+                    key: row.key,
+                    type: 'button',
+                    style: { ...PICKER_ROW_STYLE, ...(row.key === current?.key ? MODEL_ROW_ACTIVE_STYLE : {}) },
+                    title: [row.modelId, row.contextWindow ? `window ${formatTokens(row.contextWindow)}` : undefined]
+                        .filter(Boolean).join(' · '),
+                    onClick: () => onModel(row)
+                },
+                React.createElement('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis' } }, row.name),
+                row.provider
+                    ? React.createElement('span', { style: PICKER_META_STYLE }, row.provider)
+                    : undefined
+            ))
+            : React.createElement(
+                'div',
+                { style: PICKER_EMPTY_STYLE },
+                model?.modelCount
+                    ? 'No model matches that filter.'
+                    : 'The connected agent reports no models to switch to.'
+            )
+    );
+}
+
+/** Composer completion popup: `/commands`, `@files`, `!shell`. */
+function renderCompletion(
+    React: PanelHostTools['React'],
+    view: CompletionView,
+    pick: (item: CompletionItem) => void
+): ReactNS.ReactNode {
+    return React.createElement(
+        'div',
+        { style: COMPLETION_STYLE },
+        view.items.length > 0
+            ? view.items.map((item, index) => React.createElement(
+                'button',
+                {
+                    key: `${view.kind}-${index}`,
+                    type: 'button',
+                    style: { ...PICKER_ROW_STYLE, ...(index === view.selected ? MODEL_ROW_ACTIVE_STYLE : {}) },
+                    onMouseDown: (event: ReactNS.MouseEvent) => {
+                        // Keep the composer focused; the click still lands on this row.
+                        event.preventDefault();
+                    },
+                    onClick: () => pick(item)
+                },
+                React.createElement('span', { style: { whiteSpace: 'nowrap' } }, item.label),
+                item.detail
+                    ? React.createElement('span', { style: PICKER_META_STYLE }, item.detail)
+                    : undefined
+            ))
+            : React.createElement('div', { style: PICKER_EMPTY_STYLE },
+                view.hint ?? (view.query ? 'No match.' : 'Keep typing.'))
+    );
+}
+
+/** One `/command` row. */
+function commandItem(command: AgentCommand): CompletionItem {
+    return {
+        insert: `/${command.name} `,
+        label: `/${command.name}`,
+        detail: command.source
+    };
+}
+
+/** Directory-first file rows for `@`, filtered by the typed prefix. */
+function fileItems(entries: readonly ResourceStat[], base: string, prefix: string): CompletionItem[] {
+    const needle = prefix.toLowerCase();
+    return entries
+        .filter(entry => entry.name.toLowerCase().startsWith(needle))
+        .sort((left, right) => {
+            if (left.kind === right.kind) {
+                return left.name.localeCompare(right.name);
+            }
+            return left.kind === 'directory' ? -1 : 1;
+        })
+        .slice(0, FILE_ROWS)
+        .map(entry => ({
+            insert: `@${base}${entry.name}${entry.kind === 'directory' ? '/' : ' '}`,
+            label: `${entry.name}${entry.kind === 'directory' ? '/' : ''}`,
+            detail: entry.kind === 'directory' ? 'dir' : 'file'
+        }));
+}
+
+/** `200000` → `200k`, `1048576` → `1.0M`. */
+function formatTokens(value: number | undefined): string {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return '—';
+    }
+    if (value >= 100_000) {
+        return `${Math.round(value / 1000)}k`;
+    }
+    if (value >= 1000) {
+        return `${(value / 1000).toFixed(1)}k`;
+    }
+    return String(Math.round(value));
 }
 
 /** Tooltip text for one agent: its launch command and protocol. */
@@ -504,7 +992,47 @@ const PICKER_STYLE: ReactNS.CSSProperties = {
     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.35)'
 };
 
-/** Invisible layer that closes the picker when the user clicks elsewhere. */
+/** Model/thinking menu: anchored above the footer, scrollable. */
+const MODEL_MENU_STYLE: ReactNS.CSSProperties = {
+    position: 'absolute',
+    bottom: '100%',
+    left: '10px',
+    zIndex: 10,
+    width: 'min(420px, calc(100% - 20px))',
+    maxHeight: '60vh',
+    overflowY: 'auto',
+    padding: '4px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    background: 'var(--theia-menu-background)',
+    color: 'var(--theia-menu-foreground)',
+    border: '1px solid var(--theia-menu-border)',
+    borderRadius: '4px',
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.35)'
+};
+
+/** Completion popup: anchored above the composer. */
+const COMPLETION_STYLE: ReactNS.CSSProperties = {
+    position: 'absolute',
+    bottom: '100%',
+    left: '10px',
+    zIndex: 10,
+    width: 'min(420px, calc(100% - 20px))',
+    maxHeight: '40vh',
+    overflowY: 'auto',
+    padding: '4px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    background: 'var(--theia-menu-background)',
+    color: 'var(--theia-menu-foreground)',
+    border: '1px solid var(--theia-menu-border)',
+    borderRadius: '4px',
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.35)'
+};
+
+/** Invisible layer that closes the menus when the user clicks elsewhere. */
 const PICKER_BACKDROP_STYLE: ReactNS.CSSProperties = {
     position: 'fixed',
     inset: 0,
@@ -536,6 +1064,11 @@ const PICKER_ROW_STYLE: ReactNS.CSSProperties = {
     cursor: 'pointer'
 };
 
+const MODEL_ROW_ACTIVE_STYLE: ReactNS.CSSProperties = {
+    background: 'var(--theia-list-activeSelectionBackground)',
+    color: 'var(--theia-list-activeSelectionForeground)'
+};
+
 const PICKER_ROW_DISABLED_STYLE: ReactNS.CSSProperties = {
     opacity: 0.4,
     cursor: 'default'
@@ -553,6 +1086,32 @@ const PICKER_EMPTY_STYLE: ReactNS.CSSProperties = {
     opacity: 0.65
 };
 
+const MODEL_FILTER_STYLE: ReactNS.CSSProperties = {
+    margin: '0 6px 4px',
+    padding: '3px 6px',
+    background: 'var(--theia-input-background)',
+    color: 'var(--theia-input-foreground)',
+    border: '1px solid var(--theia-input-border)',
+    borderRadius: '3px',
+    font: 'inherit'
+};
+
+const THINKING_CHIP_STYLE: ReactNS.CSSProperties = {
+    padding: '2px 8px',
+    background: 'var(--theia-button-secondaryBackground)',
+    color: 'var(--theia-button-secondaryForeground)',
+    border: '1px solid transparent',
+    borderRadius: '10px',
+    font: 'inherit',
+    fontSize: '11px',
+    cursor: 'pointer'
+};
+
+const THINKING_CHIP_ACTIVE_STYLE: ReactNS.CSSProperties = {
+    background: 'var(--theia-button-background)',
+    color: 'var(--theia-button-foreground)'
+};
+
 const BUTTON_STYLE: ReactNS.CSSProperties = {
     background: 'var(--theia-button-secondaryBackground)',
     color: 'var(--theia-button-secondaryForeground)',
@@ -568,6 +1127,35 @@ const PRIMARY_BUTTON_STYLE: ReactNS.CSSProperties = {
     background: 'var(--theia-button-background)',
     color: 'var(--theia-button-foreground)',
     padding: '4px 14px'
+};
+
+const STATUS_CHIP_STYLE: ReactNS.CSSProperties = {
+    padding: '2px 8px',
+    border: '1px solid var(--theia-panel-border)',
+    borderRadius: '10px',
+    background: 'transparent',
+    color: 'var(--theia-descriptionForeground)',
+    font: 'inherit',
+    fontSize: '11px',
+    cursor: 'pointer',
+    whiteSpace: 'nowrap'
+};
+
+/** Buttons on the left, model/usage chips on the right. */
+const FOOTER_STYLE: ReactNS.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '8px',
+    marginTop: '6px',
+    flexWrap: 'wrap'
+};
+
+const STATUS_ROW_STYLE: ReactNS.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    flexWrap: 'wrap'
 };
 
 const TRANSCRIPT_STYLE: ReactNS.CSSProperties = {

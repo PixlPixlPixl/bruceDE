@@ -195,9 +195,38 @@ export interface AcpInitializeResult {
     readonly agentCapabilities?: unknown;
 }
 
+/** One model an ACP agent offers; `session/set_model` takes its `modelId`. */
+export interface AcpModelInfo {
+    readonly modelId?: string;
+    /** Some agents use `id` instead of the deprecated `modelId`. */
+    readonly id?: string;
+    readonly name?: string;
+    readonly description?: string;
+}
+
 /** Create a session for `cwd`; resolves with the agent's session id. */
 export interface AcpNewSessionResult {
     readonly sessionId: string;
+    /** Model selection, advertised by agents that support `session/set_model`. */
+    readonly models?: {
+        readonly currentModelId?: string;
+        readonly availableModels?: readonly AcpModelInfo[];
+    };
+}
+
+/** Usage an agent may attach to a finished turn. */
+export interface AcpPromptUsage {
+    readonly inputTokens?: number;
+    readonly outputTokens?: number;
+    readonly totalTokens?: number;
+    readonly cachedReadTokens?: number;
+    readonly cachedWriteTokens?: number;
+}
+
+/** Result of `session/prompt`. */
+export interface AcpPromptResult {
+    readonly stopReason?: string;
+    readonly usage?: AcpPromptUsage;
 }
 
 /** Typed view of the ACP calls this plugin uses. */
@@ -212,7 +241,7 @@ export class AcpClient {
         });
     }
 
-    async newSession(cwd: string): Promise<string> {
+    async newSession(cwd: string): Promise<AcpNewSessionResult> {
         const result = await this.connection.request<AcpNewSessionResult>('session/new', {
             cwd,
             mcpServers: []
@@ -220,15 +249,26 @@ export class AcpClient {
         if (!result?.sessionId) {
             throw new Error('ACP agent did not return a session id.');
         }
-        return result.sessionId;
+        return result;
     }
 
     /** Starts one turn. Resolves when the agent finishes it. */
-    prompt(sessionId: string, text: string): Promise<{ readonly stopReason?: string }> {
+    prompt(sessionId: string, text: string): Promise<AcpPromptResult> {
         return this.connection.request('session/prompt', {
             sessionId,
             prompt: [{ type: 'text', text }]
         });
+    }
+
+    /**
+     * Switches the session's model.
+     *
+     * ACP marks this unstable: agents that do not advertise `models` in
+     * `session/new` do not implement it, so the caller must only offer models the
+     * agent actually listed.
+     */
+    setModel(sessionId: string, modelId: string): Promise<unknown> {
+        return this.connection.request('session/set_model', { sessionId, modelId });
     }
 
     cancel(sessionId: string): void {

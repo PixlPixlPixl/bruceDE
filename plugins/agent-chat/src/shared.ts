@@ -22,10 +22,71 @@ export interface AgentDescriptor {
 
 export type AgentStatus = 'idle' | 'starting' | 'running' | 'error';
 
-/** One transcript entry. `tool` entries are ACP tool-call summaries. */
+/** One transcript entry. `tool` entries are tool calls and shell runs. */
 export interface ChatEntry {
     readonly role: 'user' | 'agent' | 'tool' | 'system';
     readonly text: string;
+}
+
+/**
+ * One model the connected agent can switch to.
+ *
+ * `key` is the selection handle this plugin sends back: Pi addresses models by
+ * provider *and* id (the same id can exist in several providers), so the key
+ * carries both and the panel never has to know the protocol's shape.
+ */
+export interface AgentModelInfo {
+    readonly key: string;
+    readonly name: string;
+    readonly provider?: string;
+    /** Raw model id the agent's `set_model` expects. */
+    readonly modelId: string;
+    readonly contextWindow?: number;
+}
+
+/** Model/thinking selection of a live session, as the agent reports it. */
+export interface AgentModelState {
+    readonly current?: AgentModelInfo;
+    readonly thinking?: string;
+    /** Levels the *current* model supports; empty when it has no reasoning. */
+    readonly thinkingLevels?: readonly string[];
+    /**
+     * How many models the agent offers. The list itself is fetched on demand
+     * through {@link AgentSessionsService.searchModels}: Pi reports thousands of
+     * models, which must not travel with every poll.
+     */
+    readonly modelCount?: number;
+}
+
+/**
+ * Token accounting of a live session.
+ *
+ * `cacheHitPercent` is the share of input-side tokens served from the provider's
+ * prompt cache — `cacheRead / (input + cacheRead)` over the whole session, which
+ * is how a cache hit rate is normally read. It is absent until the agent has
+ * reported usage at least once.
+ */
+export interface AgentUsageInfo {
+    readonly contextTokens?: number | null;
+    readonly contextWindow?: number;
+    readonly contextPercent?: number | null;
+    readonly cacheHitPercent?: number;
+    readonly totalTokens?: number;
+    readonly cost?: number;
+}
+
+/** One command the agent exposes for `/name`. */
+export interface AgentCommand {
+    readonly name: string;
+    readonly description?: string;
+    /** `extension`, `prompt`, `skill` (Pi) or `acp` (agent-provided). */
+    readonly source?: string;
+}
+
+/** What the connected agent can do beyond plain prompting. */
+export interface AgentCapabilities {
+    /** The agent can run a shell command on its own (`!command` in the composer). */
+    readonly shell: boolean;
 }
 
 /** Snapshot of one agent conversation. */
@@ -34,6 +95,12 @@ export interface AgentState {
     readonly status: AgentStatus;
     readonly entries: readonly ChatEntry[];
     readonly error?: string;
+    /** Working directory the agent was started in; the `@` completion starts here. */
+    readonly cwd?: string;
+    readonly capabilities?: AgentCapabilities;
+    readonly model?: AgentModelState;
+    readonly usage?: AgentUsageInfo;
+    readonly commands?: readonly AgentCommand[];
 }
 
 /**
@@ -62,4 +129,16 @@ export interface AgentSessionsService {
     reset(sessionId: string): Promise<AgentState>;
     /** Releases the child process of a session whose panel is gone. */
     release(sessionId: string): Promise<void>;
+
+    /** Models of a session matching `query`, capped at `limit`. */
+    searchModels(sessionId: string, query: string, limit?: number): Promise<AgentModelInfo[]>;
+    /** Switches the session to one of the models {@link searchModels} returned. */
+    selectModel(sessionId: string, modelKey: string): Promise<AgentState>;
+    /** Sets the reasoning level to one of {@link AgentModelState.thinkingLevels}. */
+    selectThinking(sessionId: string, level: string): Promise<AgentState>;
+    /**
+     * Runs one shell command through the agent and records its output in the
+     * transcript. Only meaningful when {@link AgentCapabilities.shell} is true.
+     */
+    runShell(sessionId: string, command: string): Promise<AgentState>;
 }

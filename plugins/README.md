@@ -104,7 +104,28 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   agent list: it opens a picker with installed agents on top (full colour,
   alphabetical) and the supported-but-missing ones below, dimmed and disabled.
   Choosing an agent opens a **sibling tab** next to the current chat
-  (`tab-after`); the running session keeps its transcript and its process.
+  (`tab-after`), even when it is the agent this tab already talks to — `+` means
+  "another chat", so it never reconfigures the one on screen. The running
+  session keeps its transcript and its process.
+
+  The composer footer shows what the agent reports about itself: the current
+  model and thinking level (click it to switch, from the models and levels the
+  agent actually advertises), context-window usage with the raw token counts in
+  the tooltip, and the cache hit rate (`cacheRead / (input + cacheRead)` over the
+  session). Pi supplies these through `get_state`, `get_session_stats`,
+  `get_available_models`, `get_available_thinking_levels`, `set_model` and
+  `set_thinking_level`; ACP agents supply models and commands only when they
+  advertise them, so nothing is offered that the agent cannot do. Pi lists
+  thousands of models, so the catalogue is fetched on demand by a filtered
+  `searchModels` call instead of travelling with every state poll.
+
+  Typing `/` offers the agent's own commands (`get_commands` in Pi, the
+  `available_commands_update` notification in ACP), `@` offers files from the
+  host's `workspace.resources` service, and `!` runs a shell command through the
+  agent. `@path` mentions are inlined by the plugin — RPC mode does not expand
+  `@file` the way the agent's interactive mode does — and `!` is only offered
+  when the protocol has a shell passthrough (Pi's `bash` command; ACP agents in
+  this plugin do not).
 
   Agents come from `BRUCEDE_AGENTS` (JSON array of
   `{ id, name, protocol?, command, args? }`, `protocol` defaults to `acp`;
