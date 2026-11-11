@@ -6,3 +6,4 @@ lib
 !*-app/package.json
 
 dist
+.icebox

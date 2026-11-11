@@ -2,31 +2,71 @@
 
 Icebox is a plugin-first Theia desktop workspace. The initial workspace is an empty docking canvas; users install/open feature panels and decide how they are arranged. The host provides docking, plugin lifecycle, shared APIs, and platform integration—not a prescribed IDE layout.
 
-## Development
+## Install and run
+
+Node.js 18+ and npm are the only prerequisites. The same scripts work on Linux,
+macOS and Windows; every `.sh` script has a `.cmd` twin for cmd.exe and
+PowerShell, and both wrappers run the same logic in `scripts/icebox.mjs`.
 
 ```bash
-npm ci                      # also compiles @icebox/plugin-api, @icebox/plugin-runtime and workspace-core
-npm run build:electron      # plugin bundles, then the app
-npm run start:electron
+./install.sh          # npm install + local packages + plugins + browser app
+./start-browser.sh    # http://127.0.0.1:3000
+./start-electron.sh   # native desktop window (builds the electron target first)
 ```
 
-The browser target listens on `127.0.0.1:3000` by default. The start scripts end
-with `--`, so everything after `npm run start:browser --` reaches Theia's own
-`start` command unchanged:
+`install.sh` only runs the steps that are missing or out of date. It compares
+fingerprints of the lockfile, the workspace sources and the plugin sources with
+the last successful run, stored in the gitignored `.icebox/install-state.json`,
+so a second `./install.sh` is a few file reads. The start scripts make the same
+checks before launching, so they work straight after `git clone` too. Pass
+`--force` to any of them to redo the work unconditionally.
 
 ```bash
-npm run start:browser                                    # http://localhost:3000
-npm run start:browser -- --port 8080                     # http://localhost:8080
-npm run start:browser -- --hostname 0.0.0.0 --port 8080  # every interface
-npm run start:browser -- --hostname 192.168.1.20         # one interface
+./status.sh                           # what is installed, built and up to date
+./update.sh                           # git pull --ff-only, then rebuild what changed
+./uninstall.sh                        # remove node_modules and build outputs
+./uninstall.sh --yes --purge-data     # also remove ~/.icebox (plugins, layout state)
+./install.sh --target electron        # build the electron target now
+./install.sh --target both            # build both targets
+./install.sh --target none            # dependencies and plugins only
+```
+
+`update.sh` rebuilds only the targets that already exist, so a browser-only
+install stays browser-only; `--target` overrides that. It refuses to pull over
+uncommitted changes and rebuilds the checkout as it is, and `--no-pull` skips
+git entirely. On Windows use `install.cmd`, `start-browser.cmd`,
+`start-electron.cmd`, `update.cmd`, `uninstall.cmd` and `status.cmd`.
+
+## Running
+
+The browser target listens on `127.0.0.1:3000` by default. The start scripts
+forward every argument to Theia's own `start` command unchanged:
+
+```bash
+./start-browser.sh                                   # http://localhost:3000
+./start-browser.sh --port 8080                       # http://localhost:8080
+./start-browser.sh --hostname 0.0.0.0 --port 8080    # every interface
+./start-browser.sh --hostname 192.168.1.20           # one interface
+./start-electron.sh --port 3001                      # native window on 3001
 ```
 
 `--hostname` is Theia's flag for the listen address (its help text calls it "the
 allowed hostname for connections", but it is passed straight to
 `server.listen(port, hostname)`). There is no `--host`: an unknown flag is ignored
 by Theia, so `--host 0.0.0.0` leaves the server on `localhost` and nothing outside
-the machine can connect. The electron target forwards the same arguments
-(`npm run start:electron -- --port 3001`).
+the machine can connect. The electron target forwards the same arguments.
+
+### Direct npm use
+
+The scripts wrap these commands, which still work on their own (for example in
+CI):
+
+```bash
+npm ci                # installs, then compiles @icebox/plugin-api, @icebox/plugin-runtime and workspace-core
+npm run build:browser # plugin bundles, then the browser app
+npm run build:electron
+npm run start:browser
+```
 
 `npm ci`/`npm install` runs the root `postinstall`, which compiles the local
 packages in order (`@icebox/plugin-api` → `@icebox/plugin-runtime` →
@@ -59,7 +99,8 @@ Error: Cannot find module '../build/Debug/ffmpeg.node'
 
 The Electron build now builds the addon itself when it is missing
 (`electron-app` runs `native:ffmpeg` → `scripts/ensure-ffmpeg-addon.mjs` before
-`theia build`), so `npm run build:electron` repairs this case. It compiles the
+`theia build`), so `./start-electron.sh` (and `npm run build:electron`) repair
+this case. It compiles the
 addon from C with node-gyp, which needs python3, make and a C compiler
 (`base-devel` on Arch, `build-essential` on Debian, Xcode CLT on macOS, MSVC
 Build Tools on Windows); on Linux it falls back to the system Node headers in
@@ -101,6 +142,7 @@ See [plugins/README.md](./plugins/README.md). Each plugin folder has a `plugin.j
 - `packages/plugin-runtime/`: Cordis plugin manager, manifest validation, disposal helpers.
 - `packages/plugin-build/`: esbuild bundler for plugin entrypoints.
 - `packages/ui-kit/`: optional shared visual tokens/primitives.
+- `scripts/`: `icebox.mjs` (install/update/uninstall/start logic) and the ffmpeg addon repair step.
 - `plugins/`: self-contained feature plugin packages (terminal, agent-chat, file-browser, Git).
 - `electron-app/` and `browser-app/`: Theia application targets.
 
