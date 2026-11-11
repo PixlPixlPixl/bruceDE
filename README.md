@@ -41,6 +41,32 @@ If you installed with `--ignore-scripts`, build them once by hand:
 npm run build:workspace-core
 ```
 
+### If `build:electron` says `Cannot find module '../build/Debug/ffmpeg.node'`
+
+Theia's Electron build checks Electron's bundled ffmpeg library with a small
+native addon (`@theia/ffmpeg/build/Release/ffmpeg.node`). The addon is built by
+the package's install script — `node-gyp rebuild`, synthesised from its
+`binding.gyp` — so an install that skipped dependency scripts (for example
+`--ignore-scripts`, or an npm `allowScripts` policy that does not cover
+`@theia/ffmpeg`) leaves it missing. The install still succeeds, and the build
+then fails *after* printing harmless ffmpeg cache messages, which makes the
+message look unrelated:
+
+```text
+Found cached ffmpeg library. Hashes are equal, not replacing the ffmpeg library.
+Error: Cannot find module '../build/Debug/ffmpeg.node'
+```
+
+The Electron build now builds the addon itself when it is missing
+(`electron-app` runs `native:ffmpeg` → `scripts/ensure-ffmpeg-addon.mjs` before
+`theia build`), so `npm run build:electron` repairs this case. It compiles the
+addon from C with node-gyp, which needs python3, make and a C compiler
+(`base-devel` on Arch, `build-essential` on Debian, Xcode CLT on macOS, MSVC
+Build Tools on Windows); on Linux it falls back to the system Node headers in
+`/usr/include/node` if it cannot download them. If the addon still cannot be
+built, `npm rebuild @theia/ffmpeg` (with install scripts allowed) does the same
+job from npm's side.
+
 Every script that runs during install or build calls its tool entrypoint through
 `node` directly (`node node_modules/@theia/cli/bin/theia.js build`) instead of
 going through the `node_modules/.bin` wrapper. Those wrappers are `.cmd` files on

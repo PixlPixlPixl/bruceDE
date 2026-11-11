@@ -50,6 +50,7 @@ All plugins are **trusted native code**. Frontend modules run directly in the Th
 - Do not create test-only feature plugins. Early plugins should implement real basic functionality.
 - Ship no demo panels, demo commands or placeholder widgets in the host either. If a surface exists in the UI it must be a real implementation.
 - Install and build scripts invoke tool entrypoints through `node` (`node node_modules/@theia/cli/bin/theia.js build`), never through the `node_modules/.bin` wrappers: those are `.cmd` files on Windows whose `"%_prog%"` line breaks where `node` is itself a shim, aborting `npm install` with `'"node"' is not recognized`.
+- A build step that needs a compiled artifact produces it or fails with an actionable message; never assume an install-time script created it. `npm install --ignore-scripts` and npm's `allowScripts` policy silently skip dependency install scripts, so `scripts/ensure-ffmpeg-addon.mjs` builds `@theia/ffmpeg`'s addon before `theia build` instead of letting the build die on `Cannot find module '../build/Debug/ffmpeg.node'`.
 - The application defaults to the dark theme. Host and plugin styling uses the `--theia-*` CSS variables; hardcoded light colors are a bug.
 
 ## Direction

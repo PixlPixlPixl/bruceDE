@@ -762,6 +762,35 @@ check(
     'a deep path would overflow the header'
 );
 
+console.log('the electron build provides its own ffmpeg addon');
+{
+    const ensure = await readSource('scripts/ensure-ffmpeg-addon.mjs');
+    const electronAppScripts = (await readJsonSource('electron-app/package.json')).scripts ?? {};
+    check(
+        'a script builds the ffmpeg addon when npm did not',
+        ensure.includes('build/Release/ffmpeg.node') && ensure.includes('build/Debug/ffmpeg.node')
+            && ensure.includes("'rebuild'"),
+        'the ffmpeg addon would stay missing and theia build would fail'
+    );
+    check(
+        'the addon build reuses the system Node headers as a fallback',
+        ensure.includes('/usr/include/node/node.h') && ensure.includes('--nodedir=/usr'),
+        'a machine without network access could not build the addon'
+    );
+    check(
+        'the electron app builds the addon before theia build',
+        electronAppScripts.bundle.includes('npm run native:ffmpeg')
+            && electronAppScripts.bundle.indexOf('native:ffmpeg') < electronAppScripts.bundle.indexOf('theia.js build')
+            && electronAppScripts.watch.includes('npm run native:ffmpeg'),
+        'bundle/watch would hit the missing addon first'
+    );
+    check(
+        'the addon script runs through node, not a .bin wrapper',
+        electronAppScripts['native:ffmpeg'].startsWith('node '),
+        'the Windows shim rule would be broken'
+    );
+}
+
 console.log('install and build scripts avoid Windows shims');
 {
     // `node_modules/.bin` wrappers are .cmd files on Windows whose last line is

@@ -26,10 +26,11 @@
     "electron": "44.9.1"
   },
   "scripts": {
-    "bundle": "npm run rebuild && node ../node_modules/@theia/cli/bin/theia.js build --mode development",
+    "bundle": "npm run rebuild && npm run native:ffmpeg && node ../node_modules/@theia/cli/bin/theia.js build --mode development",
+    "native:ffmpeg": "node ../scripts/ensure-ffmpeg-addon.mjs",
     "rebuild": "node ../node_modules/@theia/cli/bin/theia.js rebuild:electron --cacheRoot ..",
     "start": "node ../node_modules/@theia/cli/bin/theia.js start",
-    "watch": "npm run rebuild && node ../node_modules/@theia/cli/bin/theia.js build --watch --mode development"
+    "watch": "npm run rebuild && npm run native:ffmpeg && node ../node_modules/@theia/cli/bin/theia.js build --watch --mode development"
   },
   "theia": {
     "target": "electron",
