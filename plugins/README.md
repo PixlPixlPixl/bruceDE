@@ -126,6 +126,24 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   accounting, no shell passthrough and no mid-turn steering channel, so those
   controls stay absent rather than pretending; `/new` mints a fresh thread.
 
+  **Dormant by decision.** No bundled agent has an AG-UI endpoint: Pi's output
+  modes are `text`, `json` and `rpc` (no HTTP transport, no AG-UI code in its
+  distribution), and the ACP agents are stdio as well. So every agent this build
+  knows falls back to its native protocol, and the label reads `Pi RPC` or `ACP`.
+  That is the intended state, not a broken detection. A bridge that fronts a local
+  CLI with an HTTP/SSE endpoint is deliberately not shipped: it would add a
+  process and a port without giving the agent any capability it does not already
+  have over stdio. AG-UI earns its place with agents that *are* HTTP servers —
+  `agui:` on an `ICEBOX_AGENTS` entry, or `ICEBOX_AGUI_URL` for a gateway in front
+  of several of them.
+
+  That is also why the AG-UI path is kept, tested and wired rather than removed:
+  generative UI is the interface's natural job. AG-UI streams `CUSTOM` events
+  alongside `STATE_SNAPSHOT`/`STATE_DELTA`, so an agent can send UI payloads down
+  the same run that carries its messages — a channel ACP has no general
+  equivalent for. `appendAgUiEvent` deliberately drops those events today and is
+  the single place a GenUI payload would be routed from.
+
   Each chat tab is one session: the backend keys its process and transcript by
   the panel instance id, and the agent travels in the panel state, so restoring a
   layout restores the tabs. A caller that needs to address the session later

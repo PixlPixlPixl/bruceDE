@@ -1282,6 +1282,11 @@ function appendAgUiEvent(session: LiveSession, event: AgUiEvent): void {
             return;
         }
         default:
+            // `CUSTOM`, `STATE_SNAPSHOT`/`STATE_DELTA`, `MESSAGES_SNAPSHOT`, `RAW`
+            // and future event types. Dropped on purpose: a transcript entry is
+            // text, and none of these carry text the reader needs. `CUSTOM` is
+            // where generative-UI payloads arrive, so this is the one place a
+            // GenUI renderer would hook in — no protocol work is needed for it.
             return;
     }
 }
