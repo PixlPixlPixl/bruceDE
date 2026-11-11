@@ -32,7 +32,7 @@ The workspace starts empty. Press F1 and run a menu entry:
 - `Open Terminal` — a real host terminal in the main DockPanel
 - `Open File Browser` — the file browser panel
 - `Open Git` — the Git panel
-- `Open Agent Chat` — the ACP agent chat panel
+- `Open Agent Chat` — the agent chat panel (AG-UI, falling back to ACP or Pi RPC)
 - `Open Projects` — project folders and their agent sessions
 - `Open Plugin Manager` — install/enable plugins and review the trust warning
 - `Save Layout` / `Load Layout` — snapshot the arrangement, restore it later

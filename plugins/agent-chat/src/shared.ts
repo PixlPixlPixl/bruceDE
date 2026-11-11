@@ -99,6 +99,16 @@ export interface AgentCapabilities {
 export interface AgentState {
     readonly agentId: string;
     readonly status: AgentStatus;
+    /**
+     * Protocol this session actually speaks, once it has started.
+     *
+     * Absent before the first turn. It differs from the agent's declared
+     * `protocol` when an AG-UI endpoint answered, because AG-UI is tried first
+     * and the agent's native protocol is only the fallback.
+     */
+    readonly protocol?: AgentProtocol;
+    /** Why the configured AG-UI endpoint was not used, when it was not. */
+    readonly aguiUnavailable?: string;
     readonly entries: readonly ChatEntry[];
     readonly error?: string;
     /** Working directory the agent was started in; the `@` completion starts here. */

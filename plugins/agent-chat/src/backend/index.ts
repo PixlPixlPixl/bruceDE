@@ -1,8 +1,14 @@
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import type { BackendPluginAPI } from '@icebox/plugin-api';
-import { WORKSPACE_EVENT_IDS, WORKSPACE_SERVICE_IDS } from '@icebox/plugin-api';
+import {
+    AGENT_PROTOCOL_LABELS,
+    WORKSPACE_EVENT_IDS,
+    WORKSPACE_SERVICE_IDS,
+    isAgentProtocol
+} from '@icebox/plugin-api';
 import { AcpClient, AcpConnection, type AcpModelInfo, type AcpPromptUsage } from '../acp.js';
+import { AgUiConnection, agUiId, probeAgUi, type AgUiEvent, type AgUiMessage } from '../agui.js';
 import { PiRpcConnection } from '../pi-rpc.js';
 import { executableExists } from '../spawn.js';
 import type {
@@ -41,10 +47,13 @@ const MAX_ATTACHMENTS_BYTES = 400_000;
  * without being able to launch something that is not there. Any ACP agent can
  * also be added without a code change through `ICEBOX_AGENTS`.
  *
- * Two protocols are supported, because the ecosystem is not uniform: most agents
- * speak ACP, Pi speaks its own RPC mode and has no ACP mode. The handshake is the
- * real availability check; `available` only reports whether the binary resolves,
- * so a changed flag surfaces as a protocol error in the transcript instead of a
+ * Three protocols are supported, because the ecosystem is not uniform: AG-UI is
+ * the panel's preferred interface, most agents speak ACP, and Pi speaks its own
+ * RPC mode and has no ACP mode. Which one a session uses is decided at start: an
+ * agent with an AG-UI endpoint is tried over AG-UI first, and its own protocol is
+ * the fallback when the endpoint does not answer. The handshake is the real
+ * availability check; `available` only reports whether a binary resolves, so a
+ * changed flag surfaces as a protocol error in the transcript instead of a
  * silent failure.
  */
 const KNOWN_AGENTS: readonly AgentCandidate[] = [
@@ -123,7 +132,7 @@ interface AgentIntrospection {
     /** Starts a fresh agent session, backing the agent's own `/new`. */
     newSession?(): Promise<void>;
     /** Token accounting of the session, when the agent reports it. */
-    refreshUsage(): Promise<AgentUsageInfo | undefined>;
+    refreshUsage?(): Promise<AgentUsageInfo | undefined>;
     /** Commands the agent accepts as `/name`. */
     refreshCommands(): Promise<readonly AgentCommand[]>;
     selectModel(model: AgentModelInfo): Promise<void>;
@@ -168,6 +177,15 @@ interface LiveSession {
     streamingText: boolean;
     /** The agent's own session handle, once it has started. */
     resume?: AgentSessionHandle;
+    /**
+     * Protocol the live link speaks.
+     *
+     * Set when the link starts: `agui` when an AG-UI endpoint answered,
+     * otherwise the agent's own. Cleared when a link is disposed.
+     */
+    protocol?: AgentProtocol;
+    /** Why a configured AG-UI endpoint was not used, for the panel's label. */
+    aguiUnavailable?: string;
     /** Keep the agent's conversation on disk so a later resume can find it. */
     persist: boolean;
     /** True while a native session loads and its history is being replayed. */
@@ -200,6 +218,8 @@ export function activate(api: BackendPluginAPI): void {
     const snapshot = (session: LiveSession): AgentState => ({
         agentId: session.agentId,
         status: session.status,
+        protocol: session.protocol,
+        aguiUnavailable: session.aguiUnavailable,
         entries: [...session.entries],
         error: session.error,
         cwd: session.cwd,
@@ -313,7 +333,7 @@ export function activate(api: BackendPluginAPI): void {
             // Start straight away: the model and command labels are only
             // meaningful once the agent is up, and the user opened this tab to
             // talk to it. The process is released when the tab closes.
-            if (executableExists(agent.command)) {
+            if (agentCanStart(agent)) {
                 void ensureStarted(session, session.cwd)
                     .then(async link => {
                         await refreshIntrospection(session, link);
@@ -353,20 +373,29 @@ export function activate(api: BackendPluginAPI): void {
             // The panel has no Reset button: a fresh session is the agent's own
             // `/new` or a new tab. Pi exposes it as an RPC command, not as one of
             // its discoverable slash commands, so it is handled here.
-            if (session.status !== 'running' && text.trim() === '/new' && session.agent.protocol === 'pi-rpc') {
+            if (
+                session.status !== 'running'
+                && text.trim() === '/new'
+                && (session.agent.protocol === 'pi-rpc' || session.agent.agui !== undefined)
+            ) {
                 const introspect = session.link?.introspect;
                 if (!introspect?.newSession) {
                     throw new Error('The agent is not started yet; /new needs a live session.');
                 }
+                const previous = session.resume;
                 await guard(session, async () => {
                     await introspect.newSession!();
                     session.entries = [];
                     session.queue = [];
                     session.usage = undefined;
                     session.streamingText = false;
-                    // `/new` starts a fresh agent-side session, so the old handle
-                    // must not be kept: a later resume would reopen the old one.
-                    session.resume = undefined;
+                    // `/new` replaces the agent-side conversation. An agent that
+                    // reports the session it created (Pi, AG-UI) has already
+                    // replaced the handle; one that does not leaves a stale handle
+                    // behind, and resuming it later would reopen the old chat.
+                    session.resume = session.resume && session.resume.sessionId !== previous?.sessionId
+                        ? session.resume
+                        : undefined;
                     await refreshIntrospection(session, session.link);
                 });
                 pushEntry(session, { role: 'system', text: 'Started a new agent session.' });
@@ -380,9 +409,9 @@ export function activate(api: BackendPluginAPI): void {
             // Re-probe at send time: the user may have installed the CLI since
             // the plugin activated, and a stale `available` must not make the
             // panel claim the agent works.
-            if (!executableExists(session.agent.command)) {
+            if (!agentCanStart(session.agent)) {
                 session.status = 'error';
-                session.error = `"${session.agent.command}" was not found on PATH.`;
+                session.error = `"${session.agent.command}" was not found on PATH and no AG-UI endpoint is configured.`;
                 pushEntry(session, { role: 'user', text });
                 pushEntry(session, { role: 'system', text: session.error });
                 touch(session);
@@ -507,10 +536,11 @@ export function activate(api: BackendPluginAPI): void {
         try {
             const link = await ensureStarted(session, session.cwd);
             await link.prompt(prompt);
-            // ACP resolves the prompt when the turn ends; Pi answers as soon as
-            // it accepts the prompt and reports completion through events, so it
-            // keeps the session `running` until `agent_settled`.
-            if (session.agent?.protocol === 'acp') {
+            // ACP resolves the prompt when the turn ends, and an AG-UI run resolves
+            // when its event stream closes, which is the same boundary. Pi answers
+            // as soon as it accepts the prompt and reports completion through
+            // events, so it keeps the session `running` until `agent_settled`.
+            if (session.protocol !== 'pi-rpc') {
                 session.status = 'idle';
                 await refreshUsage(session);
             }
@@ -536,7 +566,12 @@ export function activate(api: BackendPluginAPI): void {
     }
 
     async function refreshUsage(session: LiveSession): Promise<void> {
-        const usage = await session.link?.introspect?.refreshUsage().catch(() => undefined);
+        const introspect = session.link?.introspect;
+        // Usage is optional per protocol: an AG-UI endpoint reports none.
+        if (!introspect?.refreshUsage) {
+            return;
+        }
+        const usage = await introspect.refreshUsage().catch(() => undefined);
         if (usage) {
             session.usage = usage;
         }
@@ -548,6 +583,7 @@ export function activate(api: BackendPluginAPI): void {
         }
         session.link?.dispose();
         session.link = undefined;
+        session.protocol = undefined;
         session.status = 'starting';
 
         const agent = session.agent;
@@ -555,11 +591,124 @@ export function activate(api: BackendPluginAPI): void {
             throw new Error('This chat has no agent yet.');
         }
 
-        const link = agent.protocol === 'pi-rpc'
-            ? await startPi(session, agent, workingDirectory)
-            : await startAcp(session, agent, workingDirectory);
+        const link = await connectAgent(session, agent, workingDirectory);
         session.link = link;
         return link;
+    }
+
+    /**
+     * Opens the agent over AG-UI when it answers, and over its own protocol when
+     * it does not.
+     *
+     * AG-UI is the panel's primary interface, so it is what an agent with a
+     * configured endpoint is tried with first. The liveness check is cheap and
+     * side-effect free, which is what makes a fallback possible without costing
+     * the user a turn: a dead endpoint is discovered before anything is sent to
+     * it. An agent that has no endpoint, or whose endpoint stays silent, keeps
+     * working exactly as before through ACP or Pi's RPC mode.
+     */
+    async function connectAgent(
+        session: LiveSession,
+        agent: AgentDescriptor,
+        workingDirectory: string
+    ): Promise<AgentLink> {
+        const endpoint = agent.agui;
+        if (!endpoint) {
+            return startNative(session, agent, workingDirectory);
+        }
+        const answering = await probeAgUi(endpoint).catch(() => false);
+        if (answering) {
+            session.protocol = 'agui';
+            // The endpoint may have been down earlier in this session's life.
+            session.aguiUnavailable = undefined;
+            return startAgUi(session, agent, endpoint);
+        }
+        if (!agent.command) {
+            throw new Error(
+                `"${agent.name}" is reachable only over AG-UI, and ${endpoint} is not answering.`
+            );
+        }
+        session.aguiUnavailable = `The AG-UI endpoint ${endpoint} is not answering.`;
+        // The fallback is announced rather than silent: the panel's protocol
+        // label then says ACP, and this entry says why it is not AG-UI.
+        pushEntry(session, {
+            role: 'system',
+            text: `${session.aguiUnavailable} Using ${AGENT_PROTOCOL_LABELS[agent.protocol]} instead.`
+        });
+        return startNative(session, agent, workingDirectory);
+    }
+
+    /** Starts the agent over its own protocol: ACP, or Pi's RPC mode. */
+    async function startNative(
+        session: LiveSession,
+        agent: AgentDescriptor,
+        workingDirectory: string
+    ): Promise<AgentLink> {
+        session.protocol = agent.protocol;
+        return agent.protocol === 'pi-rpc'
+            ? startPi(session, agent, workingDirectory)
+            : startAcp(session, agent, workingDirectory);
+    }
+
+    /**
+     * Opens a live AG-UI conversation.
+     *
+     * There is no child process here: a turn is one HTTP request whose response
+     * streams the run's events, so `prompt` resolves when that stream closes —
+     * the equivalent of ACP resolving its `session/prompt`. AG-UI has no shell
+     * passthrough and no mid-turn steering channel, and it reports no model list
+     * or token accounting, so the link has no model picker and no usage chips.
+     *
+     * The thread id *is* the resume handle. AG-UI keeps a conversation on its side
+     * under that id, which is why continuing an earlier chat reuses it; `/new`
+     * mints a fresh one, which is the protocol's way of starting a conversation
+     * over without deleting the old thread.
+     */
+    async function startAgUi(
+        session: LiveSession,
+        agent: AgentDescriptor,
+        endpoint: string
+    ): Promise<AgentLink> {
+        const connection = new AgUiConnection(endpoint, {
+            event: event => appendAgUiEvent(session, event)
+        });
+        const newThread = (): string => {
+            const threadId = agUiId('thread');
+            session.resume = { agentId: agent.id, protocol: 'agui', sessionId: threadId };
+            touch(session);
+            return threadId;
+        };
+        if (session.resume?.protocol !== 'agui') {
+            newThread();
+        }
+        return {
+            get alive() {
+                return connection.alive;
+            },
+            prompt: async text => {
+                const threadId = session.resume?.protocol === 'agui'
+                    ? session.resume.sessionId
+                    : newThread();
+                await connection.run(threadId, messageHistory(session, text), {
+                    agentId: agent.id,
+                    cwd: session.cwd
+                });
+            },
+            dispose: () => connection.dispose(),
+            capabilities: { shell: false, midTurn: 'queue' },
+            introspect: {
+                // AG-UI has no introspection surface: a server reports state as
+                // events during a run, not on request.
+                refreshModels: async () => undefined,
+                refreshCommands: async () => [],
+                selectModel: async () => {
+                    throw new Error('AG-UI endpoints report no model list.');
+                },
+                newSession: async () => {
+                    newThread();
+                }
+            }
+        };
     }
 
     async function startAcp(
@@ -1071,6 +1220,117 @@ function appendAcpUpdate(session: LiveSession, params: Record<string, unknown>):
 }
 
 /**
+ * Rewrites AG-UI events into the same transcript entries the other protocols
+ * produce.
+ *
+ * Only what a reader needs is surfaced: streamed text, reasoning, tool activity
+ * and the end of the run. `STATE_SNAPSHOT`, `MESSAGES_SNAPSHOT`, `STEP_*` and
+ * raw payloads are the server's own bookkeeping and stay out of the transcript;
+ * so do the incremental tool-call argument fragments, which are only meaningful
+ * once the call ends.
+ */
+function appendAgUiEvent(session: LiveSession, event: AgUiEvent): void {
+    switch (event.type) {
+        case 'RUN_STARTED':
+            session.status = 'running';
+            return;
+        case 'RUN_FINISHED':
+            session.status = 'idle';
+            session.streamingText = false;
+            return;
+        case 'RUN_ERROR': {
+            const message = readString(event.message) ?? 'The AG-UI run failed.';
+            session.status = 'error';
+            session.error = message;
+            session.streamingText = false;
+            pushEntry(session, { role: 'system', text: message });
+            return;
+        }
+        case 'TEXT_MESSAGE_START':
+            // A new message starts a new bubble; without this the next agent
+            // message would be appended to the previous one.
+            session.streamingText = false;
+            return;
+        case 'TEXT_MESSAGE_CONTENT': {
+            const delta = readString(event.delta);
+            if (delta) {
+                appendAgentText(session, delta);
+            }
+            return;
+        }
+        case 'TEXT_MESSAGE_END':
+            session.streamingText = false;
+            return;
+        case 'THINKING_TEXT_MESSAGE_CONTENT':
+        case 'REASONING_MESSAGE_CONTENT': {
+            const delta = readString(event.delta);
+            if (delta) {
+                pushEntry(session, { role: 'system', text: `thought: ${delta}` });
+            }
+            return;
+        }
+        case 'TOOL_CALL_START': {
+            const name = readString(event.toolCallName) ?? 'tool';
+            pushEntry(session, { role: 'tool', text: `tool: ${name}` });
+            return;
+        }
+        case 'TOOL_CALL_RESULT': {
+            const content = readString(event.content);
+            if (content) {
+                pushEntry(session, { role: 'tool', text: `tool: ${truncate(content, 300)}` });
+            }
+            return;
+        }
+        default:
+            return;
+    }
+}
+
+/**
+ * The message history this run carries.
+ *
+ * A turn is one POST, and AG-UI expects the client to send the conversation it
+ * wants the agent to see: the protocol has no duplex channel the server maintains
+ * per message. The transcript is therefore mapped back onto user/assistant
+ * messages — tool and system entries describe the panel, not the conversation —
+ * and the prompt being sent replaces the last user entry, because the panel
+ * stores what the user typed while the agent receives the version with inlined
+ * `@path` attachments.
+ */
+function messageHistory(session: LiveSession, prompt: string): readonly AgUiMessage[] {
+    const history: AgUiMessage[] = [];
+    for (const entry of session.entries) {
+        const role = messageRole(entry);
+        if (role) {
+            history.push({ id: agUiId(role), role, content: entry.text });
+        }
+    }
+    const last = history[history.length - 1];
+    if (last && last.role === 'user') {
+        history[history.length - 1] = { ...last, content: prompt };
+    } else {
+        history.push({ id: agUiId('user'), role: 'user', content: prompt });
+    }
+    return history;
+}
+
+function truncate(text: string, limit: number): string {
+    const single = text.replace(/\s+/g, ' ').trim();
+    return single.length > limit ? `${single.slice(0, limit - 1)}…` : single;
+}
+
+/** The AG-UI role of a transcript entry; tool and system entries carry none. */
+function messageRole(entry: ChatEntry): 'user' | 'assistant' | undefined {
+    if (entry.role === 'user') {
+        return 'user';
+    }
+    if (entry.role === 'agent') {
+        return 'assistant';
+    }
+    return undefined;
+}
+
+/**
  * Rewrites Pi RPC session events into the same transcript entries.
  *
  * Only assistant text, tool activity and turn boundaries are surfaced: Pi also
@@ -1201,29 +1461,59 @@ function pushEntry(session: LiveSession, entry: ChatEntry): void {
 /**
  * Agents come from `ICEBOX_AGENTS` (authoritative; `ICEBOX_ACP_AGENTS` is
  * still accepted as its old name) or the known list.
- * The environment variable is a JSON array of `{ id, name, command, args?, protocol? }`.
+ * The environment variable is a JSON array of
+ * `{ id, name, command?, args?, protocol?, agui? }`; `agui` is the HTTP endpoint
+ * of that agent's AG-UI server, and `command` may be omitted for an agent that
+ * only exists behind AG-UI.
  */
 function discoverAgents(): AgentDescriptor[] {
     const configured = readConfiguredAgents();
     if (configured) {
         // An explicit configuration is the user's decision: list every entry, so
         // a missing binary is reported instead of silently disappearing.
-        return configured.map(candidate => toDescriptor(candidate, executableExists(candidate.command)));
+        return configured.map(candidate => toDescriptor(candidate));
     }
     // Nothing configured: every supported agent is listed with its availability,
     // so the picker can show installed agents first and the rest as unavailable.
-    return KNOWN_AGENTS.map(candidate => toDescriptor(candidate, executableExists(candidate.command)));
+    return KNOWN_AGENTS.map(candidate => toDescriptor(candidate));
 }
 
-function toDescriptor(candidate: AgentCandidate, available: boolean): AgentDescriptor {
+function toDescriptor(candidate: AgentCandidate): AgentDescriptor {
+    const agui = aguiEndpoint(candidate.agui);
     return {
         id: candidate.id,
         name: candidate.name,
         protocol: candidate.protocol,
         command: candidate.command,
         args: candidate.args ?? [],
-        available
+        ...(agui ? { agui } : {}),
+        // "Available" means there is something to try: an AG-UI endpoint needs
+        // no binary at all, and an agent that has one can be reached even when
+        // its CLI is not installed (the endpoint may wrap another runtime).
+        available: agui !== undefined || executableExists(candidate.command)
     };
+}
+
+/**
+ * The AG-UI endpoint an agent is tried over.
+ *
+ * A declared endpoint wins. `ICEBOX_AGUI_URL` is the default for every agent that
+ * does not declare one, which is how a single gateway in front of several CLIs is
+ * wired without repeating its URL per agent; it is unset by default, so a plain
+ * install talks to the agents' own protocols.
+ */
+function aguiEndpoint(declared: string | undefined): string | undefined {
+    const own = declared?.trim();
+    if (own) {
+        return own;
+    }
+    const shared = process.env.ICEBOX_AGUI_URL?.trim();
+    return shared ? shared : undefined;
+}
+
+/** True when the agent has something to start: an AG-UI endpoint or a binary. */
+function agentCanStart(agent: AgentDescriptor): boolean {
+    return agent.agui !== undefined || executableExists(agent.command);
 }
 
 function readConfiguredAgents(): AgentCandidate[] | undefined {
@@ -1242,19 +1532,24 @@ function readConfiguredAgents(): AgentCandidate[] | undefined {
                 continue;
             }
             const record = entry as Record<string, unknown>;
-            const command = typeof record.command === 'string' ? record.command : undefined;
-            if (!command) {
+            const command = readString(record.command)?.trim() ?? '';
+            const agui = readString(record.agui)?.trim();
+            // An entry needs something to talk to: a binary, an AG-UI endpoint, or
+            // both (endpoint first, binary as the fallback).
+            const handle = command || agui;
+            if (!handle) {
                 continue;
             }
             const args = Array.isArray(record.args)
                 ? record.args.filter((arg): arg is string => typeof arg === 'string')
                 : [];
             agents.push({
-                id: typeof record.id === 'string' ? record.id : command,
-                name: typeof record.name === 'string' ? record.name : command,
+                id: readString(record.id) ?? handle,
+                name: readString(record.name) ?? handle,
                 protocol: isProtocol(record.protocol) ? record.protocol : 'acp',
                 command,
-                args
+                args,
+                ...(agui ? { agui } : {})
             });
         }
         return agents.length > 0 ? agents : undefined;
@@ -1263,9 +1558,11 @@ function readConfiguredAgents(): AgentCandidate[] | undefined {
     }
 }
 
-function isProtocol(value: unknown): value is AgentProtocol {
-    return value === 'acp' || value === 'pi-rpc';
-}
+/**
+ * A configured protocol is validated by the API's own predicate, so a new
+ * protocol is known here as soon as it exists in `plugin-api`.
+ */
+const isProtocol = isAgentProtocol;
 
 function readString(value: unknown): string | undefined {
     return typeof value === 'string' ? value : undefined;

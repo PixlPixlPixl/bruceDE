@@ -8,7 +8,7 @@ import type {
     AgentStatus,
     BackendPluginAPI
 } from '@icebox/plugin-api';
-import { WORKSPACE_EVENT_IDS, WORKSPACE_SERVICE_IDS } from '@icebox/plugin-api';
+import { WORKSPACE_EVENT_IDS, WORKSPACE_SERVICE_IDS, isAgentProtocol } from '@icebox/plugin-api';
 import type {
     AgentSessionsView,
     ProjectRecord,
@@ -489,7 +489,9 @@ function readHandle(value: unknown): ProjectSessionRecord['resume'] {
     const agentId = readString(record.agentId);
     const sessionId = readString(record.sessionId);
     const protocol = record.protocol;
-    if (!agentId || !sessionId || (protocol !== 'acp' && protocol !== 'pi-rpc')) {
+    // Validated through the API's own predicate: a protocol this build does not
+    // know is still a handle worth keeping, never a reason to drop the record.
+    if (!agentId || !sessionId || !isAgentProtocol(protocol)) {
         return undefined;
     }
     const sessionFile = readString(record.sessionFile);

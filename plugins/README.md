@@ -103,12 +103,28 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   The header box is the same `6px 10px` as the other plugin panels, so the
   separator line matches when the panels sit side by side.
 - **Agent Chat** (`icebox.agent-chat`) — backend half drives an installed agent
-  CLI and provides `agent.sessions`. Two wire protocols are supported, because
-  the ecosystem is not uniform:
+  CLI and provides `agent.sessions`. Three wire protocols are supported, because
+  the ecosystem is not uniform, and **AG-UI is the primary one**:
+  - `agui` — the AG-UI protocol: one HTTP `POST` of a `RunAgentInput` per turn,
+    whose response is a Server-Sent Events stream of typed events
+    (`RUN_STARTED`, `TEXT_MESSAGE_CONTENT`, `TOOL_CALL_START`, `RUN_FINISHED`, …).
+    Any AG-UI server can back a chat; an agent may even have no CLI at all.
   - `acp` — the Agent Client Protocol (JSON-RPC over stdio), used by Gemini CLI,
     Claude Code and other ACP agents;
   - `pi-rpc` — Pi's own JSONL command/event protocol (`pi --mode rpc`); Pi has
     no ACP mode.
+
+  AG-UI is tried **first** for every agent that has an endpoint, and the agent's
+  own protocol is the fallback when it is not available. Availability is checked
+  before anything is sent: a `HEAD` request with a short timeout proves a server
+  is listening (a network error, 404/501 or a timeout means it is not), so a
+  dead endpoint costs no turn and mutates no thread. Falling back is announced in
+  the transcript ("The AG-UI endpoint … is not answering. Using ACP instead.")
+  and the header's protocol label shows which interface the session actually
+  speaks — `AG-UI`, `ACP` or `Pi RPC` — next to the agent's name, with the
+  endpoint and the reason in its tooltip. AG-UI has no model list, no token
+  accounting, no shell passthrough and no mid-turn steering channel, so those
+  controls stay absent rather than pretending; `/new` mints a fresh thread.
 
   Each chat tab is one session: the backend keys its process and transcript by
   the panel instance id, and the agent travels in the panel state, so restoring a
@@ -118,9 +134,13 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   `sessionId`/`sessionFile` from `get_state`, ACP's `sessionId`. Passing that
   handle back in `openSession(…, { resume })` continues the same agent-side
   conversation through the agent's own mechanism — `--session <file>` for Pi,
-  `session/load` for ACP — and rebuilds the transcript from the agent
-  (`get_messages` for Pi, replayed `session/update` notifications for ACP), so a
-  resume does not start a new session or discard the provider's prompt cache.
+  `session/load` for ACP, the same AG-UI `threadId` for AG-UI — and rebuilds the
+  transcript from the agent (`get_messages` for Pi, replayed `session/update`
+  notifications for ACP), so a resume does not start a new session or discard the
+  provider's prompt cache. AG-UI carries the conversation as the run's message
+  history and keeps the thread on the server, so its transcript is rebuilt from
+  what this session has already seen. An `agui` handle with its thread id is
+  stored exactly like the others.
   A chat opened with a `cwd` persists its session so it can be resumed from any
   directory; a plain chat keeps `--no-session` and stays ephemeral. The header has a `+` button instead of a permanent
   agent list: it opens a picker with installed agents on top (full colour,
@@ -168,8 +188,13 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   this plugin do not).
 
   Agents come from `ICEBOX_AGENTS` (JSON array of
-  `{ id, name, protocol?, command, args? }`, `protocol` defaults to `acp`;
-  `ICEBOX_ACP_AGENTS` is still accepted under its old name). Without
+  `{ id, name, protocol?, command?, args?, agui? }`, `protocol` defaults to
+  `acp`; `ICEBOX_ACP_AGENTS` is still accepted under its old name). `agui` is
+  that agent's AG-UI endpoint; `command` may be omitted when the agent exists only
+  behind AG-UI, and `ICEBOX_AGUI_URL` supplies a default endpoint for agents that
+  declare none (one gateway in front of several CLIs). The endpoint is the user's
+  own configuration, so it is only vetted, not allowlisted: it must be an
+  `http`/`https` URL without embedded credentials. Without
   configuration, the built-in catalog is a **detection list, not a roster**: Pi,
   Gemini CLI, Claude Code (ACP) and OpenCode are probed on `PATH`, and only the
   ones actually installed are offered — the panel never shows a dead entry for an

@@ -127,8 +127,35 @@ export interface WorkspaceDialogsService {
     pickDirectory(options?: { readonly title?: string }): Promise<string | undefined>;
 }
 
-/** Wire protocol an agent CLI speaks (`acp` or Pi's own RPC mode). */
-export type AgentProtocol = 'acp' | 'pi-rpc';
+/**
+ * Wire protocol a chat session speaks.
+ *
+ * `agui` is the AG-UI protocol — one HTTP POST per turn answering with a stream
+ * of Server-Sent Events — and is the interface the panel prefers. `acp` and
+ * `pi-rpc` are the agents' own stdio protocols, used when an agent has no AG-UI
+ * endpoint or its endpoint does not answer.
+ */
+export type AgentProtocol = 'acp' | 'pi-rpc' | 'agui';
+
+/** Human-readable name of a protocol, for the panel's label and tooltips. */
+export const AGENT_PROTOCOL_LABELS: Record<AgentProtocol, string> = {
+    agui: 'AG-UI',
+    acp: 'ACP',
+    'pi-rpc': 'Pi RPC'
+};
+
+/**
+ * True for a protocol this API version knows.
+ *
+ * A plugin that stores an agent session handle validates it with this instead of
+ * listing protocols itself, so a new protocol is accepted by every consumer as
+ * soon as `plugin-api` knows it. Projects used to keep its own `acp`/`pi-rpc`
+ * list, which silently dropped AG-UI handles and would have lost every AG-UI
+ * session on the next store write.
+ */
+export function isAgentProtocol(value: unknown): value is AgentProtocol {
+    return value === 'agui' || value === 'acp' || value === 'pi-rpc';
+}
 
 /** Liveness of one agent session. */
 export type AgentStatus = 'idle' | 'starting' | 'running' | 'error';
@@ -137,9 +164,22 @@ export type AgentStatus = 'idle' | 'starting' | 'running' | 'error';
 export interface AgentDescriptor {
     readonly id: string;
     readonly name: string;
+    /**
+     * The agent's own protocol, used when it has no AG-UI endpoint or when none
+     * answers. An agent reachable only over AG-UI leaves `command` empty.
+     */
     readonly protocol: AgentProtocol;
     readonly command: string;
     readonly args: readonly string[];
+    /**
+     * HTTP endpoint of the agent's AG-UI server, when it has one.
+     *
+     * AG-UI is tried first for every agent that declares an endpoint, because it
+     * is the interface the panel prefers; the protocol above is the fallback for
+     * when the endpoint does not answer. `ICEBOX_AGUI_URL` supplies a default for
+     * agents that do not declare their own.
+     */
+    readonly agui?: string;
     /** False when the executable is not on `PATH`; shown as unavailable. */
     readonly available: boolean;
 }

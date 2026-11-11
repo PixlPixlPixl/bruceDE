@@ -6,7 +6,7 @@ import type {
     PanelHostTools,
     WorkspaceDialogsService
 } from '@icebox/plugin-api';
-import { WORKSPACE_SERVICE_IDS } from '@icebox/plugin-api';
+import { AGENT_PROTOCOL_LABELS, WORKSPACE_SERVICE_IDS } from '@icebox/plugin-api';
 import type {
     AgentSessionsView,
     ProjectRecord,
@@ -637,7 +637,7 @@ function compareAgents(left: AgentDescriptor, right: AgentDescriptor): number {
 }
 
 function protocolLabel(protocol: AgentDescriptor['protocol']): string {
-    return protocol === 'pi-rpc' ? 'Pi RPC' : 'ACP';
+    return AGENT_PROTOCOL_LABELS[protocol];
 }
 
 function describeStatus(status: ProjectSessionRecord['status'] | undefined): string {

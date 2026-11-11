@@ -8,11 +8,12 @@ import type {
     ResourceStat,
     WorkspaceResourcesService
 } from '@icebox/plugin-api';
-import { WORKSPACE_SERVICE_IDS } from '@icebox/plugin-api';
+import { AGENT_PROTOCOL_LABELS, WORKSPACE_SERVICE_IDS } from '@icebox/plugin-api';
 import type {
     AgentCommand,
     AgentDescriptor,
     AgentModelInfo,
+    AgentProtocol,
     AgentSessionsService,
     AgentState
 } from '../shared.js';
@@ -119,9 +120,21 @@ export function activate(api: FrontendPluginAPI): void {
     });
 }
 
-/** Human name of the wire protocol, shown next to an agent in the picker. */
-function protocolLabel(protocol: AgentDescriptor['protocol']): string {
-    return protocol === 'pi-rpc' ? 'Pi RPC' : 'ACP';
+/** Human name of the wire protocol, shown next to an agent and in the header. */
+function protocolLabel(protocol: AgentProtocol | undefined): string {
+    return protocol ? AGENT_PROTOCOL_LABELS[protocol] : '';
+}
+
+/**
+ * How an agent is reached, primary interface first.
+ *
+ * AG-UI is tried before the agent's own protocol, so an agent with an endpoint
+ * shows both: AG-UI is what it normally uses, and the other name is what it falls
+ * back to when the endpoint is not answering.
+ */
+function protocolSummary(agent: AgentDescriptor): string {
+    const native = protocolLabel(agent.protocol);
+    return agent.agui ? `AG-UI · ${native}` : native;
 }
 
 /** Installed agents, alphabetically: what the picker offers at full colour. */
@@ -569,6 +582,11 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
     const missing = unavailableAgents(agents);
     const modelState = state?.model;
     const usage = state?.usage;
+    // The protocol label reports what the session actually speaks once it is up.
+    // Before that it shows what the agent will be tried over first, so the label
+    // never goes blank on an idle tab.
+    const protocolInUse = state?.protocol ?? (selected?.agui ? 'agui' : selected?.protocol);
+    const protocolHint = describeProtocol(protocolInUse, selected, state?.aguiUnavailable);
 
     return React.createElement(
         'div',
@@ -584,7 +602,14 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
                     'span',
                     { style: AGENT_NAME_STYLE, title: selected ? describeAgent(selected) : undefined },
                     selected ? selected.name : 'no agent'
-                )
+                ),
+                protocolInUse
+                    ? React.createElement(
+                        'span',
+                        { style: PROTOCOL_BADGE_STYLE, title: protocolHint },
+                        protocolLabel(protocolInUse)
+                    )
+                    : undefined
             ),
             React.createElement(
                 'div',
@@ -764,7 +789,7 @@ function renderPicker(
                 onClick: () => pick(agent)
             },
             React.createElement('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis' } }, agent.name),
-            React.createElement('span', { style: PICKER_META_STYLE }, protocolLabel(agent.protocol))
+            React.createElement('span', { style: PICKER_META_STYLE }, protocolSummary(agent))
         );
 
     return React.createElement(
@@ -994,9 +1019,44 @@ function formatTokens(value: number | undefined): string {
     return String(Math.round(value));
 }
 
-/** Tooltip text for one agent: its launch command and protocol. */
+/** Tooltip text for one agent: how it is launched and reached. */
 function describeAgent(agent: AgentDescriptor): string {
-    return `${agent.command} ${agent.args.join(' ')} · ${protocolLabel(agent.protocol)}`;
+    const launch = agent.command ? `${agent.command} ${agent.args.join(' ')}`.trim() : 'no CLI — AG-UI only';
+    const protocols = agent.agui
+        ? `AG-UI at ${agent.agui}, falling back to ${protocolLabel(agent.protocol)}`
+        : protocolLabel(agent.protocol);
+    return `${launch} · ${protocols}`;
+}
+
+/**
+ * Tooltip of the header's protocol label.
+ *
+ * The label itself is short because the header is dense; the reason a chat is
+ * not on AG-UI belongs here, where there is room for the endpoint and what it
+ * answered. Before the session starts, "AG-UI" is the interface it will be tried
+ * over first, and the native protocol is the stated fallback.
+ */
+function describeProtocol(
+    protocol: AgentProtocol | undefined,
+    agent: AgentDescriptor | undefined,
+    unavailable: string | undefined
+): string | undefined {
+    if (!protocol) {
+        return undefined;
+    }
+    if (protocol === 'agui') {
+        return agent?.agui
+            ? `This chat talks AG-UI, streaming from ${agent.agui}.`
+            : 'This chat talks AG-UI.';
+    }
+    const native = `This chat talks ${protocolLabel(protocol)}.`;
+    if (!agent?.agui) {
+        return native;
+    }
+    if (unavailable) {
+        return `${native} ${unavailable}`;
+    }
+    return `${native} AG-UI is tried first; ${protocolLabel(protocol)} is the fallback.`;
 }
 
 const PANEL_STYLE: ReactNS.CSSProperties = {
@@ -1031,6 +1091,20 @@ const AGENT_NAME_STYLE: ReactNS.CSSProperties = {
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
     fontWeight: 600
+};
+
+/** The wire protocol in use, next to the agent's name. */
+const PROTOCOL_BADGE_STYLE: ReactNS.CSSProperties = {
+    flexShrink: 0,
+    padding: '1px 5px',
+    border: '1px solid var(--theia-panel-border)',
+    borderRadius: '3px',
+    color: 'var(--theia-descriptionForeground)',
+    fontSize: '10px',
+    lineHeight: '14px',
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase',
+    whiteSpace: 'nowrap'
 };
 
 const NEW_CHAT_BUTTON_STYLE: ReactNS.CSSProperties = {
