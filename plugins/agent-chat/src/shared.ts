@@ -87,6 +87,14 @@ export interface AgentCommand {
 export interface AgentCapabilities {
     /** The agent can run a shell command on its own (`!command` in the composer). */
     readonly shell: boolean;
+    /**
+     * How a message sent while the agent is working is delivered.
+     *
+     * `steer` hands it to the agent mid-turn, which is what Pi's own interactive
+     * mode does; `queue` keeps it client-side and sends it when the current turn
+     * ends, because the protocol has no steering channel (ACP).
+     */
+    readonly midTurn: 'steer' | 'queue';
 }
 
 /** Snapshot of one agent conversation. */
@@ -121,12 +129,14 @@ export interface AgentSessionsService {
     openSession(sessionId: string, agentId: string): Promise<AgentState>;
     /** Transcript and status of a session; empty and idle when it is unknown. */
     state(sessionId: string): Promise<AgentState>;
-    /** Appends the prompt and starts the turn; resolves once it is running. */
+    /**
+     * Appends the prompt and starts the turn; resolves once it is running.
+     *
+     * A message sent while a turn is in flight is not rejected: it is steered
+     * into the running turn or queued for its end, following
+     * {@link AgentCapabilities.midTurn}.
+     */
     send(sessionId: string, text: string): Promise<AgentState>;
-    /** Cancels the in-flight turn, if any. */
-    cancel(sessionId: string): Promise<AgentState>;
-    /** Clears the transcript and keeps the agent binding. */
-    reset(sessionId: string): Promise<AgentState>;
     /** Releases the child process of a session whose panel is gone. */
     release(sessionId: string): Promise<void>;
 

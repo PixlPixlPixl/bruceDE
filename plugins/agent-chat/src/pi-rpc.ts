@@ -86,9 +86,18 @@ export class PiRpcConnection {
         await this.command({ type: 'get_state' }, HANDSHAKE_TIMEOUT_MS);
     }
 
-    /** Submits a prompt. Resolves once Pi accepts or handles it. */
-    async prompt(text: string): Promise<{ readonly disposition?: string }> {
-        const response = await this.command({ type: 'prompt', message: text }, PROMPT_ACCEPT_TIMEOUT_MS);
+    /**
+     * Submits a prompt. Resolves once Pi accepts or handles it.
+     *
+     * `streamingBehavior` is required while Pi is already streaming: `steer` is
+     * delivered after the current assistant turn finishes its tool calls, and
+     * `followUp` waits until the agent stops. Without it Pi rejects the prompt.
+     */
+    async prompt(text: string, streamingBehavior?: 'steer' | 'followUp'): Promise<{ readonly disposition?: string }> {
+        const response = await this.command(
+            streamingBehavior ? { type: 'prompt', message: text, streamingBehavior } : { type: 'prompt', message: text },
+            PROMPT_ACCEPT_TIMEOUT_MS
+        );
         const data = response.data as { disposition?: string } | undefined;
         return { disposition: data?.disposition };
     }

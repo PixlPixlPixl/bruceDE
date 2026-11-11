@@ -515,8 +515,8 @@ check(
 );
 check(
     'only protocols that can do something advertise it',
-    agentChatBackend.includes('capabilities: { shell: false }')
-        && agentChatBackend.includes('capabilities: { shell: true }'),
+    agentChatBackend.includes('capabilities: { shell: false, midTurn:')
+        && agentChatBackend.includes('capabilities: { shell: true, midTurn:'),
     'the shell trigger would claim a capability the agent lacks'
 );
 check(
@@ -537,6 +537,52 @@ check(
     'a document mousedown listener would swallow the click on a row'
 );
 
+check(
+    'the panel has no Reset or Cancel buttons',
+    !agentChatFrontend.includes("'Reset'") && !agentChatFrontend.includes("'Cancel'")
+        && !agentChatFrontend.includes('sessions.reset(') && !agentChatFrontend.includes('sessions.cancel(')
+        && !agentChatShared.includes('reset(sessionId: string)')
+        && !agentChatShared.includes('cancel(sessionId: string)'),
+    'a session could still be cleared or aborted from the panel'
+);
+check(
+    'a fresh session comes from the agent\'s own /new or a new tab',
+    agentChatBackend.includes("text.trim() === '/new'") && agentChatBackend.includes('newSession'),
+    'the agent exposes /new but the panel ignores it'
+);
+check(
+    '/new is only intercepted for the protocol that has the RPC command',
+    agentChatBackend.includes('protocol === \'pi-rpc\'') && agentChatBackend.includes('new_session'),
+    'ACP agents would lose an ordinary /new prompt'
+);
+check(
+    'mid-turn messages follow the protocol\'s own behaviour',
+    agentChatShared.includes("readonly midTurn: 'steer' | 'queue'")
+        && agentChatBackend.includes("capabilities: { shell: true, midTurn: 'steer' }")
+        && agentChatBackend.includes("capabilities: { shell: false, midTurn: 'queue' }"),
+    'a message sent during a turn would be dropped or refused'
+);
+check(
+    'steering is sent to Pi as a mid-turn prompt, not as a new turn',
+    agentChatBackend.includes("connection.prompt(text, 'steer')")
+        && agentChatShared.includes('steeringBehavior') === false,
+    'a steering message would start a second turn'
+);
+check(
+    'protocols without steering keep a client-side queue that drains',
+    agentChatBackend.includes('session.queue.push(text)') && agentChatBackend.includes('drainQueue(session)'),
+    'a queued message would never be delivered'
+);
+check(
+    'a refused steer falls back to the queue instead of disappearing',
+    agentChatBackend.includes('Steering was refused'),
+    'a failed steer would silently swallow the message'
+);
+check(
+    'the send button names what will happen to a mid-turn message',
+    agentChatFrontend.includes("midTurn === 'steer' ? 'Steer' : 'Queue'"),
+    'the button would say Send while sending behaves differently'
+);
 check(
     'the composer wraps its content instead of being drag-resized',
     agentChatFrontend.includes("resize: 'none'") && agentChatFrontend.includes('COMPOSER_MAX_HEIGHT')

@@ -109,6 +109,13 @@ interface ShellResult {
 interface AgentIntrospection {
     /** Current model, thinking level and the models on offer. */
     refreshModels(): Promise<AgentModelState | undefined>;
+    /**
+     * Hands a message to the agent mid-turn (`midTurn: 'steer'`).
+     * Absent for protocols without a steering channel.
+     */
+    steer?(text: string): Promise<void>;
+    /** Starts a fresh agent session, backing the agent's own `/new`. */
+    newSession?(): Promise<void>;
     /** Token accounting of the session, when the agent reports it. */
     refreshUsage(): Promise<AgentUsageInfo | undefined>;
     /** Commands the agent accepts as `/name`. */
@@ -123,14 +130,12 @@ interface AgentIntrospection {
  *
  * The session bookkeeping (status, transcript, error handling) is identical for
  * both protocols, so it lives in one place and each protocol only has to
- * implement start/prompt/cancel/dispose plus whatever introspection it supports.
+ * implement start/prompt/dispose plus whatever introspection it supports.
  */
 interface AgentLink {
     readonly alive: boolean;
     /** Announces the prompt; resolves once the agent accepted it. */
     prompt(text: string): Promise<void>;
-    /** Asks the agent to stop the current turn. */
-    cancel(): void;
     /** Releases the child process. */
     dispose(): void;
     readonly capabilities: AgentCapabilities;
@@ -151,6 +156,8 @@ interface LiveSession {
     commands: readonly AgentCommand[];
     /** Models of the current agent, kept for `searchModels` and `selectModel`. */
     models: readonly AgentModelInfo[];
+    /** Messages waiting for the current turn to end (`midTurn: 'queue'`). */
+    queue: string[];
     /** State of the transcript under streaming updates. */
     streamingText: boolean;
 }
@@ -203,6 +210,7 @@ export function activate(api: BackendPluginAPI): void {
             cwd,
             commands: [],
             models: [],
+            queue: [],
             streamingText: false
         };
         sessions.set(sessionId, created);
@@ -232,6 +240,7 @@ export function activate(api: BackendPluginAPI): void {
             session.usage = undefined;
             session.commands = [];
             session.models = [];
+            session.queue = [];
             // Start straight away: the model and command labels are only
             // meaningful once the agent is up, and the user opened this tab to
             // talk to it. The process is released when the tab closes.
@@ -258,8 +267,31 @@ export function activate(api: BackendPluginAPI): void {
             if (!session.agent) {
                 throw new Error('This chat has no agent yet. Pick one with the + button.');
             }
-            if (session.status === 'running' || session.status === 'starting') {
-                throw new Error('This agent is still answering the previous prompt.');
+            if (session.status === 'starting') {
+                throw new Error('The agent is still connecting; try again in a moment.');
+            }
+            // The panel has no Reset button: a fresh session is the agent's own
+            // `/new` or a new tab. Pi exposes it as an RPC command, not as one of
+            // its discoverable slash commands, so it is handled here.
+            if (session.status !== 'running' && text.trim() === '/new' && session.agent.protocol === 'pi-rpc') {
+                const introspect = session.link?.introspect;
+                if (!introspect?.newSession) {
+                    throw new Error('The agent is not started yet; /new needs a live session.');
+                }
+                await guard(session, async () => {
+                    await introspect.newSession!();
+                    session.entries = [];
+                    session.queue = [];
+                    session.usage = undefined;
+                    session.streamingText = false;
+                    await refreshIntrospection(session, session.link);
+                });
+                pushEntry(session, { role: 'system', text: 'Started a new agent session.' });
+                return snapshot(session);
+            }
+            if (session.status === 'running') {
+                await midTurnMessage(session, text);
+                return snapshot(session);
             }
             // Re-probe at send time: the user may have installed the CLI since
             // the plugin activated, and a stale `available` must not make the
@@ -277,28 +309,6 @@ export function activate(api: BackendPluginAPI): void {
             session.error = undefined;
             const prompt = await inlineMentions(text, session);
             void runTurn(session, prompt).catch(() => undefined);
-            return snapshot(session);
-        },
-
-        cancel: async sessionId => {
-            const session = sessionFor(sessionId);
-            if (session.link) {
-                session.link.cancel();
-                pushEntry(session, { role: 'system', text: 'Turn cancelled.' });
-            }
-            session.status = 'idle';
-            return snapshot(session);
-        },
-
-        reset: async sessionId => {
-            const session = sessionFor(sessionId);
-            session.link?.dispose();
-            session.link = undefined;
-            session.entries = [];
-            session.status = 'idle';
-            session.error = undefined;
-            session.streamingText = false;
-            session.usage = undefined;
             return snapshot(session);
         },
 
@@ -411,6 +421,7 @@ export function activate(api: BackendPluginAPI): void {
                 session.status = 'idle';
                 await refreshUsage(session);
             }
+            drainQueue(session);
         } catch (error) {
             failSession(session, error);
         }
@@ -514,9 +525,8 @@ export function activate(api: BackendPluginAPI): void {
                 const result = await live.prompt(sessionId!, text);
                 lastUsage = acpUsage(result.usage);
             },
-            cancel: () => live.cancel(sessionId!),
             dispose: () => connection.dispose(),
-            capabilities: { shell: false },
+            capabilities: { shell: false, midTurn: 'queue' },
             introspect: {
                 refreshModels: async () => modelState,
                 refreshUsage: async () => lastUsage,
@@ -538,7 +548,12 @@ export function activate(api: BackendPluginAPI): void {
         workingDirectory: string
     ): Promise<AgentLink> {
         const connection = new PiRpcConnection(agent.command, agent.args, workingDirectory, {
-            event: record => appendPiEvent(session, record),
+            event: record => {
+                appendPiEvent(session, record);
+                if (record.type === 'agent_settled') {
+                    drainQueue(session);
+                }
+            },
             uiRequest: record => answerPiUiRequest(session, connection, record),
             exit: reason => handleExit(session, reason)
         });
@@ -567,9 +582,8 @@ export function activate(api: BackendPluginAPI): void {
             prompt: async text => {
                 await connection.prompt(text);
             },
-            cancel: () => connection.abort(),
             dispose: () => connection.dispose(),
-            capabilities: { shell: true },
+            capabilities: { shell: true, midTurn: 'steer' },
             introspect: {
                 refreshModels: async () => {
                     const state = await connection.request<PiState>({ type: 'get_state' });
@@ -585,6 +599,15 @@ export function activate(api: BackendPluginAPI): void {
                     };
                 },
                 refreshUsage: async () => piUsage(await connection.request<PiStats>({ type: 'get_session_stats' })),
+                steer: async text => {
+                    await connection.prompt(text, 'steer');
+                },
+                newSession: async () => {
+                    const result = await connection.request<{ cancelled?: unknown }>({ type: 'new_session' });
+                    if (result?.cancelled === true) {
+                        throw new Error('The agent cancelled the new session.');
+                    }
+                },
                 refreshCommands: async () => {
                     const result = await connection.request<{ commands?: readonly Record<string, unknown>[] }>({
                         type: 'get_commands'
@@ -625,6 +648,48 @@ export function activate(api: BackendPluginAPI): void {
                 }
             }
         };
+    }
+
+    /**
+     * Delivers a message that arrived while the agent was working.
+     *
+     * With a steering channel the agent takes it mid-turn, exactly as typing in
+     * its own interactive mode does. Without one the message waits in a
+     * client-side queue that is drained when the current turn ends; a steering
+     * request the agent refuses falls back to that queue rather than vanishing.
+     */
+    async function midTurnMessage(session: LiveSession, text: string): Promise<void> {
+        pushEntry(session, { role: 'user', text });
+        const introspect = session.link?.introspect;
+        const midTurn = session.link?.capabilities.midTurn ?? 'queue';
+        if (midTurn === 'steer' && introspect?.steer) {
+            try {
+                await introspect.steer(text);
+                pushEntry(session, { role: 'system', text: 'Steering message queued for the current turn.' });
+                return;
+            } catch (error) {
+                pushEntry(session, {
+                    role: 'system',
+                    text: `Steering was refused (${describeError(error)}); queued for the end of the turn.`
+                });
+            }
+        }
+        session.queue.push(text);
+        pushEntry(session, { role: 'system', text: 'Queued: sent when the current turn ends.' });
+    }
+
+    /** Starts the next queued message once the session is idle again. */
+    function drainQueue(session: LiveSession): void {
+        if (session.status === 'running' || session.status === 'starting' || session.queue.length === 0) {
+            return;
+        }
+        const next = session.queue.shift();
+        if (next === undefined) {
+            return;
+        }
+        session.status = 'running';
+        session.error = undefined;
+        void runTurn(session, next).catch(() => undefined);
     }
 
     function handleExit(session: LiveSession, reason: string): void {

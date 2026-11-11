@@ -125,6 +125,18 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   focused as soon as it opens), and a tab that is still starting an agent says
   "Connecting to agent..." rather than "Agent is working...".
 
+  There is no Reset and no Cancel button. A fresh session is the agent's own
+  `/new` (Pi's `new_session` RPC command, intercepted by the backend and skipped
+  for ACP, where `/new` is ordinary prompt text) or a new tab from `+`.
+
+  A message sent while the agent is working is never dropped: it follows the
+  protocol's own mid-turn behaviour. Pi steers it into the running turn
+  (`prompt` with `streamingBehavior: 'steer'`), so the agent sees it after the
+  current assistant turn; ACP has no steering channel, so the backend keeps a
+  client-side queue and sends the message when the current turn ends. A steer the
+  agent refuses falls back to that queue instead of vanishing, and the button
+  names what will happen — `Steer` or `Queue` instead of `Send`.
+
   Typing `/` offers the agent's own commands (`get_commands` in Pi, the
   `available_commands_update` notification in ACP), `@` offers files from the
   host's `workspace.resources` service, and `!` runs a shell command through the

@@ -495,31 +495,17 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
         }
     };
 
-    const cancel = async (): Promise<void> => {
-        if (!agentId) {
-            return;
-        }
-        try {
-            setState(await sessions.cancel(instanceId));
-        } catch (cause) {
-            setError(cause instanceof Error ? cause.message : String(cause));
-        }
-    };
-
-    const reset = async (): Promise<void> => {
-        if (!agentId) {
-            return;
-        }
-        try {
-            setState(await sessions.reset(instanceId));
-            setError(undefined);
-        } catch (cause) {
-            setError(cause instanceof Error ? cause.message : String(cause));
-        }
-    };
-
     const starting = state?.status === 'starting';
     const working = state?.status === 'running';
+    // While a turn is in flight the button names what actually happens to the
+    // message: Pi steers it into the running turn, ACP queues it for its end.
+    const midTurn = state?.capabilities?.midTurn ?? 'queue';
+    const sendLabel = working ? (midTurn === 'steer' ? 'Steer' : 'Queue') : 'Send';
+    const sendHint = working
+        ? (midTurn === 'steer'
+            ? 'Delivered to the agent during its current turn.'
+            : 'Held until the agent finishes the current turn.')
+        : 'Send the message to the agent';
     const installed = availableAgents(agents);
     const missing = unavailableAgents(agents);
     const modelState = state?.model;
@@ -559,11 +545,6 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
                         '+'
                     ),
                     pickerOpen ? renderPicker(React, installed, missing, pickAgent) : undefined
-                ),
-                React.createElement(
-                    'button',
-                    { type: 'button', style: BUTTON_STYLE, onClick: () => void reset(), disabled: !agentId },
-                    'Reset'
                 )
             )
         ),
@@ -616,7 +597,9 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
                     ref: composer,
                     value: input,
                     placeholder: agentId
-                        ? 'Ask the agent…  /commands, @files, !shell'
+                        ? (working
+                            ? (midTurn === 'steer' ? 'Steer the agent…' : 'Queue a message for after this turn…')
+                            : 'Ask the agent…  /commands, @files, !shell')
                         : 'Pick an agent with + first',
                     // Height is measured from the content; `rows` would fight it.
                     rows: 1,
@@ -664,19 +647,10 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
                                 type: 'button',
                                 style: PRIMARY_BUTTON_STYLE,
                                 onClick: () => void send(),
-                                disabled: !agentId || busy
+                                disabled: !agentId || busy || starting,
+                                title: sendHint
                             },
-                            'Send'
-                        ),
-                        React.createElement(
-                            'button',
-                            {
-                                type: 'button',
-                                style: BUTTON_STYLE,
-                                onClick: () => void cancel(),
-                                disabled: !working
-                            },
-                            'Cancel'
+                            sendLabel
                         )
                     ),
                     React.createElement(
