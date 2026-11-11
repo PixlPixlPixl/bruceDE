@@ -273,6 +273,11 @@ It throws in backend code — backend plugins use `get` in-process.
    `var(--theia-editor-background)`, `var(--theia-editor-foreground)`,
    `var(--theia-descriptionForeground)`, `var(--theia-panel-border)` and friends;
    a literal `#fff` or `white` background is a bug, not a default.
+   Icons come from the codicon font the shell already loads
+   (`<i class="codicon codicon-refresh">`): no bundled icon assets, no image
+   files. An icon-only button keeps an `aria-label` and a `title` so it stays
+   reachable and explained, and centres its glyph with flexbox rather than a
+   line height.
 9. **Never promise code unload.** Native ESM module records may stay cached;
    reload/restart is the answer when a module cannot be replaced safely.
 

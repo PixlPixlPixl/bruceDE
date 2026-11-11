@@ -148,6 +148,16 @@ Entrypoint paths in `plugin.json` are normalized before they become URLs
 (`./dist/frontend.js` → `dist/frontend.js`); the asset route reads the remainder
 of the request URL instead of relying on a wildcard param.
 
+## Plugin manager panel
+
+The manager keeps its layout in `src/browser/plugin/plugin-manager-styles.ts` so
+the widget stays about state, not pixels: one panel gutter (`14px 16px`), one row
+rhythm (`10px 12px`), a text column holding the name, `id@version`, badges and
+description, and an action group pinned right (`margin-left: auto`) with a fixed
+button width so Enable/Disable never shift the row. Rows report trust as a badge
+because trust is granted by the confirmation dialog the first enable opens; a
+toggle that could only revoke it would be a trap.
+
 ## Host services
 
 The host publishes its own services under the `bruce.workspace` owner before any plugin activates:

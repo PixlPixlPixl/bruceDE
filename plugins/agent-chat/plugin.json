@@ -1,30 +1,31 @@
 {
-  "id": "bruce.agent-chat",
-  "name": "Agent Chat",
-  "version": "0.1.0",
-  "apiVersion": 1,
-  "entrypoints": {
-    "frontend": "./dist/frontend.js",
-    "backend": "./dist/backend.js"
-  },
-  "dependencies": {
-    "bruce.workspace": "^0.1.0"
-  },
-  "contributes": {
-    "panels": [
-      {
-        "id": "agent-chat.conversation",
-        "title": "Agent Chat"
-      }
-    ],
-    "commands": [
-      {
-        "id": "bruce.agent-chat.open",
-        "title": "Agent: Open Chat"
-      }
-    ],
-    "services": [
-      "agent.sessions"
-    ]
-  }
+    "id": "bruce.agent-chat",
+    "name": "Agent Chat",
+    "version": "0.1.0",
+    "apiVersion": 1,
+    "description": "Chat sessions with a local agent CLI over ACP or Pi RPC.",
+    "entrypoints": {
+        "frontend": "./dist/frontend.js",
+        "backend": "./dist/backend.js"
+    },
+    "dependencies": {
+        "bruce.workspace": "^0.1.0"
+    },
+    "contributes": {
+        "panels": [
+            {
+                "id": "agent-chat.conversation",
+                "title": "Agent Chat"
+            }
+        ],
+        "commands": [
+            {
+                "id": "bruce.agent-chat.open",
+                "title": "Agent: Open Chat"
+            }
+        ],
+        "services": [
+            "agent.sessions"
+        ]
+    }
 }

@@ -134,10 +134,14 @@ function FileBrowser(props: FileBrowserProps): ReactNS.ReactNode {
                 'button',
                 {
                     type: 'button',
-                    style: BUTTON_STYLE,
+                    style: ICON_BUTTON_STYLE,
+                    title: 'Refresh the file tree',
+                    'aria-label': 'Refresh',
                     onClick: () => setRefreshKey(key => key + 1)
                 },
-                'Refresh'
+                // The shell already loads the codicon font, so the icon needs no
+                // bundled asset and follows the theme like the surrounding text.
+                React.createElement('i', { className: 'codicon codicon-refresh', 'aria-hidden': true })
             )
         ),
         React.createElement(
@@ -288,14 +292,21 @@ const TITLE_STYLE: ReactNS.CSSProperties = {
     opacity: 0.7
 };
 
-const BUTTON_STYLE: ReactNS.CSSProperties = {
+/** Square, icon-only button that lines up with the panel title. */
+const ICON_BUTTON_STYLE: ReactNS.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '22px',
+    height: '22px',
+    padding: 0,
+    flexShrink: 0,
     background: 'var(--theia-button-secondaryBackground)',
     color: 'var(--theia-button-secondaryForeground)',
     border: 'none',
     borderRadius: '3px',
-    padding: '3px 10px',
     cursor: 'pointer',
-    fontSize: 'inherit'
+    fontSize: '14px'
 };
 
 const LIST_STYLE: ReactNS.CSSProperties = {

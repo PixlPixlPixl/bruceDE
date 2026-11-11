@@ -86,7 +86,9 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
 - **File Browser** (`bruce.file-browser`) — directory tree over the host's
   `workspace.resources` service, publishes selections through
   `workspace.selection`. Its backend half provides `files.roots` so the renderer
-  can learn the process working directory.
+  can learn the process working directory. The header carries an icon-only
+  Refresh button (`codicon codicon-refresh`, `aria-label="Refresh"`), not a
+  text button.
 - **Git** (`bruce.git`) — backend half runs `git status --porcelain=v2` in the
   user's work tree and provides `git.repository`; the panel reads it through
   `api.services.remote` and republishes `git/changes-updated` in the renderer.

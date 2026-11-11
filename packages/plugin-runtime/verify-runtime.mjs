@@ -612,6 +612,62 @@ check(
     'the user would have to click back into the input'
 );
 
+console.log('panel chrome');
+const fileBrowserFrontend = await readSource('plugins/file-browser/src/frontend/index.tsx');
+check(
+    'the + button centres its glyph with flexbox',
+    agentChatFrontend.includes("display: 'flex',\n    alignItems: 'center',\n    justifyContent: 'center'")
+        || (agentChatFrontend.includes('NEW_CHAT_BUTTON_STYLE') && agentChatFrontend.includes("alignItems: 'center'")
+            && agentChatFrontend.includes("justifyContent: 'center'")),
+    'the + glyph would sit off centre in its box'
+);
+{
+    // Keep the accessible name, drop the visible word: after removing the
+    // aria-label the string 'Refresh' may only appear in the tooltip text.
+    const withoutAria = fileBrowserFrontend.replace(/'aria-label': 'Refresh'/, '');
+    check(
+        'the file browser refreshes through an icon button, not a text button',
+        fileBrowserFrontend.includes("'codicon codicon-refresh'") && fileBrowserFrontend.includes("'aria-label': 'Refresh'")
+            && !withoutAria.includes("'Refresh'"),
+        'the header still carries a wordy refresh button'
+    );
+}
+const pluginManagerWidget = await readSource('workspace-core/src/browser/plugin/plugin-manager-widget.ts');
+const pluginManagerStyles = await readSource('workspace-core/src/browser/plugin/plugin-manager-styles.ts');
+check(
+    'the plugin manager takes its layout from one style module',
+    pluginManagerWidget.includes("from './plugin-manager-styles.js'")
+        && !pluginManagerWidget.includes('className:'),
+    'the panel mixes ad-hoc markup with layout'
+);
+check(
+    'the plugin manager uses one gutter and one row rhythm',
+    pluginManagerStyles.includes("padding: '14px 16px'")
+        && pluginManagerStyles.includes("padding: '10px 12px'")
+        && pluginManagerStyles.includes("gap: '8px 16px'"),
+    'spacing would differ between rows and panel edges'
+);
+check(
+    'plugin rows separate the text from the enable button',
+    pluginManagerStyles.includes('ACTIONS_STYLE') && pluginManagerStyles.includes("marginLeft: 'auto'")
+        && pluginManagerStyles.includes("minWidth: '84px'"),
+    'the enable button would crowd the plugin name'
+);
+{
+    const described = [];
+    for (const plugin of ['agent-chat', 'file-browser', 'git', 'terminal']) {
+        const manifest = await readJsonSource(`plugins/${plugin}/plugin.json`);
+        if (typeof manifest.description !== 'string' || manifest.description.length === 0) {
+            described.push(plugin);
+        }
+    }
+    check(
+        'built-in plugins describe themselves in the manager',
+        described.length === 0,
+        described.join(', ')
+    );
+}
+
 console.log('install and build scripts avoid Windows shims');
 {
     // `node_modules/.bin` wrappers are .cmd files on Windows whose last line is

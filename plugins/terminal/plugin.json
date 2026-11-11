@@ -1,27 +1,28 @@
 {
-  "id": "bruce.terminal",
-  "name": "Terminal",
-  "version": "0.1.0",
-  "apiVersion": 1,
-  "entrypoints": {
-    "frontend": "./dist/frontend.js",
-    "backend": "./dist/backend.js"
-  },
-  "dependencies": {
-    "bruce.workspace": "^0.1.0"
-  },
-  "contributes": {
-    "panels": [
-      {
-        "id": "terminal.main",
-        "title": "Terminal"
-      }
-    ],
-    "commands": [
-      {
-        "id": "bruce.terminal.open",
-        "title": "Terminal: New Terminal"
-      }
-    ]
-  }
+    "id": "bruce.terminal",
+    "name": "Terminal",
+    "version": "0.1.0",
+    "apiVersion": 1,
+    "description": "Host terminal panel, opened through the shared terminal factory.",
+    "entrypoints": {
+        "frontend": "./dist/frontend.js",
+        "backend": "./dist/backend.js"
+    },
+    "dependencies": {
+        "bruce.workspace": "^0.1.0"
+    },
+    "contributes": {
+        "panels": [
+            {
+                "id": "terminal.main",
+                "title": "Terminal"
+            }
+        ],
+        "commands": [
+            {
+                "id": "bruce.terminal.open",
+                "title": "Terminal: New Terminal"
+            }
+        ]
+    }
 }

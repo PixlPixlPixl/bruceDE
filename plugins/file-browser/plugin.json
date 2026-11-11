@@ -1,30 +1,31 @@
 {
-  "id": "bruce.file-browser",
-  "name": "File Browser",
-  "version": "0.1.0",
-  "apiVersion": 1,
-  "entrypoints": {
-    "frontend": "./dist/frontend.js",
-    "backend": "./dist/backend.js"
-  },
-  "dependencies": {
-    "bruce.workspace": "^0.1.0"
-  },
-  "contributes": {
-    "panels": [
-      {
-        "id": "files.browser",
-        "title": "Files"
-      }
-    ],
-    "commands": [
-      {
-        "id": "bruce.file-browser.open",
-        "title": "Files: Open Browser"
-      }
-    ],
-    "services": [
-      "files.roots"
-    ]
-  }
+    "id": "bruce.file-browser",
+    "name": "File Browser",
+    "version": "0.1.0",
+    "apiVersion": 1,
+    "description": "Directory tree over the workspace, publishing selections to other plugins.",
+    "entrypoints": {
+        "frontend": "./dist/frontend.js",
+        "backend": "./dist/backend.js"
+    },
+    "dependencies": {
+        "bruce.workspace": "^0.1.0"
+    },
+    "contributes": {
+        "panels": [
+            {
+                "id": "files.browser",
+                "title": "Files"
+            }
+        ],
+        "commands": [
+            {
+                "id": "bruce.file-browser.open",
+                "title": "Files: Open Browser"
+            }
+        ],
+        "services": [
+            "files.roots"
+        ]
+    }
 }

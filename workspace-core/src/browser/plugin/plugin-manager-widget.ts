@@ -5,11 +5,12 @@ import { MessageService } from '@theia/core/lib/common/message-service';
 import { nls } from '@theia/core/lib/common/nls';
 import type { PluginHostSnapshot } from '../../common/plugin-host-protocol.js';
 import { PluginManager } from './plugin-manager.js';
+import * as styles from './plugin-manager-styles.js';
 
 /**
- * Minimal plugin manager surface: lists discovered plugins with their trust and
- * enable state, and lets the user toggle either. Rendering is intentionally
- * plain — the point of this first pass is the runtime contract behind it.
+ * Plugin manager surface: lists discovered plugins with their trust and enable
+ * state and lets the user toggle the latter. Layout lives in
+ * `plugin-manager-styles.ts` so this file stays about state, not pixels.
  */
 @injectable()
 export class PluginManagerWidget extends ReactWidget {
@@ -50,27 +51,39 @@ export class PluginManagerWidget extends ReactWidget {
     protected render(): React.ReactNode {
         const snapshot = this.snapshot;
         if (!snapshot) {
-            return React.createElement('div', { className: 'bruce-plugin-manager-loading' }, 'Loading plugins…');
+            return React.createElement('div', { style: styles.LOADING_STYLE }, 'Loading plugins…');
         }
+        const enabled = snapshot.plugins.filter(plugin => snapshot.enabled.includes(plugin.id)).length;
         return React.createElement(
             'div',
-            { className: 'bruce-plugin-manager-body' },
-            React.createElement('h3', undefined, 'Discovered plugins'),
+            { style: styles.PANEL_STYLE },
+            React.createElement('h3', { style: styles.HEADING_STYLE }, 'Discovered plugins'),
+            React.createElement(
+                'p',
+                { style: styles.SUMMARY_STYLE },
+                `${snapshot.plugins.length} plugin${snapshot.plugins.length === 1 ? '' : 's'} · ${enabled} enabled`
+            ),
             snapshot.plugins.length === 0
-                ? React.createElement('p', undefined, 'No plugins found.')
+                ? React.createElement('p', { style: styles.EMPTY_STYLE }, 'No plugins found.')
                 : React.createElement(
                       'ul',
-                      { className: 'bruce-plugin-list' },
-                      snapshot.plugins.map(plugin => this.renderPlugin(plugin, snapshot))
+                      { style: styles.LIST_STYLE },
+                      snapshot.plugins.map((plugin, index) =>
+                          this.renderPlugin(plugin, snapshot, index === snapshot.plugins.length - 1)
+                      )
                   ),
             snapshot.diagnostics.length > 0
                 ? React.createElement(
                       'details',
-                      { className: 'bruce-plugin-diagnostics' },
-                      React.createElement('summary', undefined, `${snapshot.diagnostics.length} problem(s)`),
+                      { style: styles.DIAGNOSTICS_STYLE },
+                      React.createElement(
+                          'summary',
+                          { style: styles.DIAGNOSTICS_SUMMARY_STYLE },
+                          `${snapshot.diagnostics.length} problem(s)`
+                      ),
                       React.createElement(
                           'ul',
-                          undefined,
+                          { style: styles.DIAGNOSTICS_LIST_STYLE },
                           snapshot.diagnostics.map((diagnostic, index) =>
                               React.createElement(
                                   'li',
@@ -86,59 +99,57 @@ export class PluginManagerWidget extends ReactWidget {
 
     protected renderPlugin(
         plugin: PluginHostSnapshot['plugins'][number],
-        snapshot: PluginHostSnapshot
+        snapshot: PluginHostSnapshot,
+        last: boolean
     ): React.ReactNode {
-        const trusted = snapshot.trusted.includes(plugin.id);
+        const trusted = plugin.builtIn || snapshot.trusted.includes(plugin.id);
         const enabled = snapshot.enabled.includes(plugin.id);
         return React.createElement(
             'li',
-            { key: plugin.id, className: 'bruce-plugin-item' },
-            React.createElement('strong', undefined, plugin.name),
-            React.createElement('span', { className: 'bruce-plugin-id' }, ` ${plugin.id}@${plugin.version}`),
-            plugin.builtIn ? React.createElement('span', { className: 'bruce-plugin-badge' }, ' built-in') : undefined,
-            React.createElement('div', { className: 'bruce-plugin-actions' },
-                // Built-in plugins are trusted because they ship with the app; a
-                // trust toggle would only be able to revoke it, so it is not shown.
-                plugin.builtIn
-                    ? undefined
-                    : React.createElement(
-                          'button',
-                          {
-                              type: 'button',
-                              disabled: !trusted,
-                              title: trusted
-                                  ? 'Full system access has been granted to this plugin.'
-                                  : 'Accept the full-system-access warning to enable this plugin.',
-                              onClick: () => void this.toggleTrust(plugin.id, !trusted)
-                          },
-                          trusted ? 'Trusted' : 'Trust…'
-                      ),
+            { key: plugin.id, style: last ? styles.ITEM_STYLE : { ...styles.ITEM_STYLE, ...styles.ITEM_SEPARATOR } },
+            React.createElement(
+                'div',
+                { style: styles.TEXT_COLUMN_STYLE },
+                React.createElement(
+                    'div',
+                    { style: styles.TITLE_ROW_STYLE },
+                    React.createElement('span', { style: styles.NAME_STYLE }, plugin.name),
+                    React.createElement('span', { style: styles.ID_STYLE }, `${plugin.id}@${plugin.version}`),
+                    plugin.builtIn ? React.createElement('span', { style: styles.BADGE_STYLE }, 'built-in') : undefined,
+                    // Trust is granted by the confirmation dialog the first enable
+                    // opens, so the row reports it rather than offering a toggle that
+                    // can only revoke it.
+                    plugin.builtIn
+                        ? undefined
+                        : React.createElement(
+                              'span',
+                              { style: styles.BADGE_STYLE },
+                              trusted ? 'trusted' : 'needs trust'
+                          ),
+                    enabled ? undefined : React.createElement('span', { style: styles.BADGE_STYLE }, 'disabled')
+                ),
+                plugin.description
+                    ? React.createElement('span', { style: styles.DESCRIPTION_STYLE }, plugin.description)
+                    : undefined
+            ),
+            React.createElement(
+                'div',
+                { style: styles.ACTIONS_STYLE },
                 React.createElement(
                     'button',
                     {
                         type: 'button',
+                        // Enabling is the primary action of an inactive row.
+                        style: enabled ? styles.BUTTON_STYLE : styles.PRIMARY_BUTTON_STYLE,
+                        title: enabled
+                            ? 'Stop this plugin and close the panels it owns.'
+                            : 'Activate this plugin. Third-party plugins ask for full-system-access confirmation first.',
                         onClick: () => void this.toggleEnabled(plugin.id, !enabled)
                     },
                     enabled ? 'Disable' : 'Enable'
                 )
             )
         );
-    }
-
-    protected async toggleTrust(pluginId: string, trusted: boolean): Promise<void> {
-        try {
-            // Trust is granted through the same confirmation dialog as enabling
-            // third-party code; disabling trust implies disabling the plugin.
-            if (trusted) {
-                await this.manager.setEnabled(pluginId, true);
-            } else {
-                await this.manager.setEnabled(pluginId, false);
-            }
-            this.snapshot = this.manager.getSnapshot();
-            this.update();
-        } catch (error) {
-            await this.messages.error(error instanceof Error ? error.message : String(error));
-        }
     }
 
     protected async toggleEnabled(pluginId: string, enabled: boolean): Promise<void> {

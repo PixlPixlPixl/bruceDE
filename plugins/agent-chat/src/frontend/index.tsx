@@ -975,17 +975,22 @@ const AGENT_NAME_STYLE: ReactNS.CSSProperties = {
 };
 
 const NEW_CHAT_BUTTON_STYLE: ReactNS.CSSProperties = {
+    // Flex centring instead of a line height: the glyph's own metrics would
+    // otherwise sit it slightly high in a 22px box.
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
     width: '22px',
     height: '22px',
-    lineHeight: '18px',
     padding: 0,
-    textAlign: 'center',
+    lineHeight: '1',
     background: 'var(--theia-button-secondaryBackground)',
     color: 'var(--theia-button-secondaryForeground)',
     border: 'none',
     borderRadius: '3px',
     cursor: 'pointer',
-    fontSize: '14px'
+    fontSize: '15px'
 };
 
 const PICKER_STYLE: ReactNS.CSSProperties = {
