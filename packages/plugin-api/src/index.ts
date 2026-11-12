@@ -315,7 +315,13 @@ export interface ChatEntry {
     readonly text: string;
 }
 
-/** One model the agent can switch to; `key` is the selection handle. */
+/**
+ * One model the agent can switch to.
+ *
+ * `key` is the selection handle a panel sends back: Pi addresses models by
+ * provider *and* id (the same id can exist under several providers), so the key
+ * carries both and the caller never has to know a protocol's addressing.
+ */
 export interface AgentModelInfo {
     readonly key: string;
     readonly name: string;
@@ -332,7 +338,13 @@ export interface AgentModelState {
     readonly modelCount?: number;
 }
 
-/** Token accounting of a live session. */
+/**
+ * Token accounting of a live session.
+ *
+ * `cacheHitPercent` is the share of input-side tokens served from the provider's
+ * prompt cache (`cacheRead / (input + cacheRead)`, the usual reading of a hit
+ * rate). It is absent until the agent has reported usage at least once.
+ */
 export interface AgentUsageInfo {
     readonly contextTokens?: number | null;
     readonly contextWindow?: number;
@@ -342,7 +354,7 @@ export interface AgentUsageInfo {
     readonly cost?: number;
 }
 
-/** One command the agent exposes for `/name`. */
+/** One command the agent exposes for `/name`; `source` is `extension`, `prompt`, `skill` or `acp`. */
 export interface AgentCommand {
     readonly name: string;
     readonly description?: string;
@@ -353,6 +365,14 @@ export interface AgentCommand {
 export interface AgentCapabilities {
     readonly shell: boolean;
     readonly midTurn: 'steer' | 'queue';
+    /**
+     * True when the protocol can stop a turn that is already running.
+     *
+     * Every adapter here can (ACP `session/cancel`, Pi's `abort`, an AG-UI run's
+     * abort signal), but it is reported rather than assumed: a panel only offers a
+     * stop control for a capability the link actually claimed.
+     */
+    readonly interrupt?: boolean;
 }
 
 /**
@@ -512,6 +532,15 @@ export interface AgentRuntimeService {
     state(sessionId: string, since?: number): Promise<AgentRuntimeState>;
     /** Appends the prompt and starts the turn. */
     send(sessionId: string, text: string): Promise<AgentRuntimeState>;
+    /**
+     * Stops the turn in flight, leaving the conversation intact.
+     *
+     * Idempotent and safe to call on an idle session (it then does nothing): a
+     * stop control is clicked twice by impatient users, and a second interrupt
+     * must not become an error. Queued messages are discarded with the turn —
+     * "stop" means stop, not "skip to the next one".
+     */
+    interrupt(sessionId: string): Promise<AgentRuntimeState>;
     /** Releases the connection of a session whose panel is gone. */
     release(sessionId: string): Promise<void>;
     searchModels(sessionId: string, query: string, limit?: number): Promise<AgentModelInfo[]>;

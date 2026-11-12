@@ -211,7 +211,18 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   focused as soon as it opens), and a tab that is still starting an agent says
   "Connecting to agent..." rather than "Agent is working...".
 
-  There is no Reset and no Cancel button. A fresh session is the agent's own
+  The composer button is one control with two jobs, decided by the box next to
+  it. While a turn runs and the composer is empty, it narrows into a red disc and
+  stops the turn (`interrupt` on `agent.runtime`; ACP `session/cancel`, Pi's
+  `abort`, or dropping the AG-UI run's request — a stop, not a close, so the
+  session keeps its conversation and serves the next turn). Typing anything swaps
+  it back to `Queue`/`Steer` by cross-fading both labels in place, because sending
+  mid-turn is not the same action. Stopping discards the queued messages with the
+  turn: "stop" means stop, not "skip to the next one". The capability is reported
+  per link (`AgentCapabilities.interrupt`), so a protocol that could not stop a
+  turn would simply not offer the control.
+
+  There is no Reset button. A fresh session is the agent's own
   `/new` (Pi's `new_session` RPC command, intercepted by the backend and skipped
   for ACP, where `/new` is ordinary prompt text) or a new tab from `+`.
 

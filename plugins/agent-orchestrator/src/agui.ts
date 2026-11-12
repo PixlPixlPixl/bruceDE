@@ -105,13 +105,29 @@ async function ask(endpoint: URL, method: string, timeoutMs: number): Promise<Re
 
 /** One AG-UI endpoint: many runs over time, tied together by a thread id. */
 export class AgUiConnection {
-    private readonly controller = new AbortController();
     private disposed = false;
+    /**
+     * Aborts the run in flight, not the connection.
+     *
+     * AG-UI has no cancel message — a run ends when its stream closes — so
+     * interrupting means dropping the HTTP request. A fresh controller per run
+     * keeps the thread usable afterwards, which is what makes "stop" different
+     * from "close this tab".
+     */
+    private controller = new AbortController();
 
     constructor(readonly url: string, private readonly handlers: AgUiHandlers) {}
 
     get alive(): boolean {
         return !this.disposed;
+    }
+
+    /** Stops the current run; the connection stays usable for the next one. */
+    abort(): void {
+        if (this.disposed) {
+            return;
+        }
+        this.controller.abort();
     }
 
     /** Aborts a run in flight; a connection cannot be reused afterwards. */
@@ -131,6 +147,10 @@ export class AgUiConnection {
             throw new Error('This AG-UI connection is closed.');
         }
         const endpoint = parseAgUiUrl(this.url);
+        // A run that ends (or is aborted) must not leave its controller behind: a
+        // later prompt needs a live one, or it would return already-aborted.
+        const controller = new AbortController();
+        this.controller = controller;
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
@@ -143,7 +163,7 @@ export class AgUiConnection {
                 state: {},
                 forwardedProps
             }),
-            signal: this.controller.signal
+            signal: controller.signal
         });
         if (!response.ok) {
             throw new Error(`The AG-UI endpoint answered ${response.status} ${response.statusText}.`);

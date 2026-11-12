@@ -83,6 +83,15 @@ async function startAgUiStub() {
         const thread = input.threadId ?? 'none';
         const send = payload => response.write(`data: ${JSON.stringify(payload)}\n\n`);
         response.writeHead(200, { 'content-type': 'text/event-stream' });
+        if (request.url.startsWith('/slow')) {
+            // A run that streams a little and then waits for the client to give up:
+            // the only way to observe a turn that is still running.
+            send({ type: 'RUN_STARTED', responseId: 'slow-run', threadId: thread });
+            send({ type: 'TEXT_MESSAGE_START', messageId: 's1' });
+            send({ type: 'TEXT_MESSAGE_CONTENT', messageId: 's1', delta: 'working' });
+            request.on('close', () => response.end());
+            return;
+        }
         send({ type: 'RUN_STARTED', threadId: thread });
         send({ type: 'TEXT_MESSAGE_START', messageId: 'm1' });
         send({ type: 'TEXT_MESSAGE_CONTENT', messageId: 'm1', delta: 'stub answer' });
@@ -99,6 +108,9 @@ async function startAgUiStub() {
 
 /** A fake plugin host catalogue: one enabled plugin declaring the AG-UI agent. */
 function catalogue(aguiPort) {
+    // Declared as agent data, exactly as a plugin would: `available` is not part of
+    // a manifest, so it is left out and the runtime decides it.
+    const slow = { id: 'agui-slow', name: 'AG-UI Slow', protocol: 'acp', agui: `http://127.0.0.1:${aguiPort}/slow` };
     return [
         {
             id: 'icebox.agent-test',
@@ -107,6 +119,7 @@ function catalogue(aguiPort) {
             builtIn: true,
             enabled: true,
             agents: [
+                slow,
                 { id: 'stub', name: 'Stub', protocol: 'acp', agui: `http://127.0.0.1:${aguiPort}/run` },
                 { id: 'stub-with-cli', name: 'Stub with CLI', protocol: 'pi-rpc', command: 'pi', agui: 'http://127.0.0.1:9/run' }
             ]
@@ -256,7 +269,44 @@ async function main() {
         console.log('  skip  CLI session (pi is not installed)');
     }
 
-    // 5. The runtime's cursor is incremental: no resend, no lost event.
+    // 5. A running turn can be stopped, and stopping it is not closing the session.
+    await sessions.openSession('check-stop', 'agui-slow');
+    // Opening starts the connection in the background; a prompt before it settles
+    // is refused, so wait for the bind before asking for a turn.
+    await waitIdle(sessions, 'check-stop', 10_000);
+    // `send` resolves as soon as the prompt is accepted, so the turn is in flight
+    // while the stub keeps the stream open.
+    const started = await sessions.send('check-stop', 'keep working');
+    check('slow AG-UI turn is reported running', started?.status === 'running', String(started?.status));
+    check('interrupt is advertised as a capability', started?.capabilities?.interrupt === true,
+        JSON.stringify(started?.capabilities));
+    const stopped = await sessions.interrupt('check-stop');
+    check('interrupt records why the turn ended',
+        text(stopped).includes('Turn interrupted'), text(stopped).slice(-160));
+    const settled = await waitFor(sessions, 'check-stop', state => state?.status === 'idle' && !state?.error);
+    check('interrupt settles the session to idle, not error', settled?.status === 'idle' && !settled?.error,
+        `${settled?.status} ${settled?.error ?? ''}`);
+    // The same connection must serve the next turn: a stop is not a dispose.
+    const again = await sessions.send('check-stop', 'carry on');
+    const afterAgain = await waitFor(sessions, 'check-stop', state =>
+        text(state).includes('stub answer'), 5000).catch(() => undefined);
+    check('the session still serves a turn after an interrupt', Boolean(again), 'send accepted');
+    check('a later turn streams through the aborted connection', Boolean(afterAgain), 'no answer after interrupt');
+    // A mutation answers with the session's whole log; the panel folds only the
+    // delta, so a second turn must not replay the first one's lines.
+    const occurrences = (state, needle) => text(state).split(needle).length - 1;
+    check('a second turn does not replay the first turn',
+        occurrences(afterAgain ?? again, 'keep working') === 1,
+        `${occurrences(afterAgain ?? again, 'keep working')} copies of the first prompt`);
+    check('interrupt adds exactly one transcript line',
+        occurrences(afterAgain ?? again, 'Turn interrupted') === 1,
+        `${occurrences(afterAgain ?? again, 'Turn interrupted')} copies`);
+
+    // Idempotent: a second stop on an idle session is a no-op, not an error.
+    const extra = await sessions.interrupt('check-stop').catch(error => ({ error: String(error) }));
+    check('interrupt on an idle session is harmless', !extra?.error, String(extra?.error ?? '').slice(0, 80));
+
+    // 6. The runtime's cursor is incremental: no resend, no lost event.
     const first = await runtime.state('check-agui');
     const second = await runtime.state('check-agui', first.cursor);
     check('runtime state returns events after a cursor only', second.events.length === 0,

@@ -169,6 +169,8 @@ interface AgentLink {
     readonly alive: boolean;
     /** Announces the prompt; resolves once the agent accepted it. */
     prompt(text: string): Promise<void>;
+    /** Stops the turn in flight; the conversation survives. */
+    interrupt?(): void;
     /** Releases the child process. */
     dispose(): void;
     readonly capabilities: AgentCapabilities;
@@ -220,6 +222,15 @@ interface LiveSession {
     persist: boolean;
     /** True while a native session loads and its history is being replayed. */
     replaying: boolean;
+    /**
+     * A stop the user asked for is in flight.
+     *
+     * Protocols end a cancelled turn differently — ACP resolves its prompt, Pi
+     * settles with `aborted`, an AG-UI run rejects because its request was
+     * dropped — so the flag tells the turn runner that the rejection is expected
+     * rather than a failure worth surfacing as an error state.
+     */
+    interrupted?: boolean;
     /** ISO timestamp of the last state change, for the session summary. */
     updatedAt: string;
 }
@@ -456,6 +467,43 @@ export function activate(api: BackendPluginAPI): void {
             return snapshot(session);
         },
 
+        interrupt: async sessionId => {
+            // Looked up, not created: a stop on a session that was never started
+            // has nothing to stop and must not manufacture one.
+            const session = sessions.get(sessionId);
+            if (!session || (session.status !== 'running' && session.status !== 'starting')) {
+                return session ? snapshot(session) : { sessionId, agentId: '', status: 'idle', events: [], cursor: 0 };
+            }
+            const link = session.link;
+            if (!link?.interrupt) {
+                // Nothing to cancel, or the protocol cannot stop mid-turn: say so
+                // instead of pretending the stop happened.
+                pushEntry(session, {
+                    role: 'system',
+                    text: session.status === 'starting'
+                        ? 'Wait for the agent to finish starting before stopping the turn.'
+                        : 'This agent cannot stop a turn that is already running.'
+                });
+                touch(session);
+                return snapshot(session);
+            }
+            session.interrupted = true;
+            link.interrupt();
+            const discarded = session.queue.length;
+            // "Stop" means stop: a queued message would otherwise be sent the moment
+            // the turn ends, so the user would have stopped nothing.
+            session.queue = [];
+            const plural = discarded === 1 ? 'message' : 'messages';
+            pushEntry(session, {
+                role: 'system',
+                text: discarded > 0
+                    ? `Turn interrupted; ${discarded} queued ${plural} discarded.`
+                    : 'Turn interrupted.'
+            });
+            touch(session);
+            return snapshot(session);
+        },
+
         release: async sessionId => {
             const session = sessions.get(sessionId);
             if (!session) {
@@ -504,7 +552,12 @@ export function activate(api: BackendPluginAPI): void {
                 throw new Error('The connected agent does not expose thinking levels.');
             }
             await guard(session, async () => {
-                await introspect.selectThinking!(level);
+                // The guard above proved this exists; re-read it for the call so the
+                // assertion is not needed.
+                const select = introspect.selectThinking;
+                if (select) {
+                    await select(level);
+                }
                 await refreshIntrospection(session, session.link);
             });
             return snapshot(session);
@@ -585,6 +638,14 @@ export function activate(api: BackendPluginAPI): void {
             drainQueue(session);
             touch(session);
         } catch (error) {
+            if (session.interrupted) {
+                // The protocol rejecting here is the stop working, not a fault.
+                session.interrupted = false;
+                session.status = 'idle';
+                session.error = undefined;
+                touch(session);
+                return;
+            }
             failSession(session, error);
         }
     }
@@ -732,8 +793,9 @@ export function activate(api: BackendPluginAPI): void {
                     cwd: session.cwd
                 });
             },
+            interrupt: () => connection.abort(),
             dispose: () => connection.dispose(),
-            capabilities: { shell: false, midTurn: 'queue' },
+            capabilities: { shell: false, midTurn: 'queue', interrupt: true },
             introspect: {
                 // AG-UI has no introspection surface: a server reports state as
                 // events during a run, not on request.
@@ -841,8 +903,16 @@ export function activate(api: BackendPluginAPI): void {
                 const result = await live.prompt(sessionId!, text);
                 lastUsage = acpUsage(result.usage);
             },
+            // ACP answers `session/prompt` with a `cancelled` stop reason after
+            // its `session/cancel` notification, so no local side effect is needed.
+            interrupt: () => {
+                // Set by `session/new` or `session/load` before this link exists.
+                if (sessionId) {
+                    live.cancel(sessionId);
+                }
+            },
             dispose: () => connection.dispose(),
-            capabilities: { shell: false, midTurn: 'queue' },
+            capabilities: { shell: false, midTurn: 'queue', interrupt: true },
             introspect: {
                 refreshModels: async () => modelState,
                 refreshUsage: async () => lastUsage,
@@ -930,8 +1000,9 @@ export function activate(api: BackendPluginAPI): void {
             prompt: async text => {
                 await connection.prompt(text);
             },
+            interrupt: () => connection.abort(),
             dispose: () => connection.dispose(),
-            capabilities: { shell: true, midTurn: 'steer' },
+            capabilities: { shell: true, midTurn: 'steer', interrupt: true },
             introspect: {
                 refreshModels: async () => {
                     const state = await connection.request<PiState>({ type: 'get_state' });
@@ -1424,9 +1495,12 @@ function appendPiEvent(session: LiveSession, record: Record<string, unknown>): v
     }
 
     if (type === 'agent_settled') {
-        if (record.aborted === true) {
+        // An abort the user asked for already has its own transcript line, added
+        // when the interrupt was accepted; only an agent-initiated abort is news.
+        if (record.aborted === true && !session.interrupted) {
             pushEntry(session, { role: 'system', text: 'Turn aborted.' });
         }
+        session.interrupted = false;
         session.status = 'idle';
         session.error = undefined;
         session.streamingText = false;

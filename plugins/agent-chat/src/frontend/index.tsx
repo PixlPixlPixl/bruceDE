@@ -587,6 +587,22 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
         }
     };
 
+    /**
+     * Stops the turn in flight.
+     *
+     * Deliberately not guarded by `busy`: the stop control exists for a turn that
+     * is already running, which is exactly when `send` is in flight.
+     */
+    const stop = async (): Promise<void> => {
+        setCompletion(undefined);
+        try {
+            setState(await sessions.interrupt(sessionId));
+            setError(undefined);
+        } catch (cause) {
+            setError(cause instanceof Error ? cause.message : String(cause));
+        }
+    };
+
     const starting = state?.status === 'starting';
     const working = state?.status === 'running';
     // While a turn is in flight the button names what actually happens to the
@@ -598,6 +614,11 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
             ? 'Delivered to the agent during its current turn.'
             : 'Held until the agent finishes the current turn.')
         : 'Send the message to the agent';
+    // While a turn runs, an empty composer means the button's job changes: there
+    // is nothing to send, so it becomes the stop control. Typing anything at once
+    // swaps it back to Queue/Steer, because sending now means joining the turn.
+    const stoppable = working && Boolean(state?.capabilities?.interrupt);
+    const showStop = stoppable && input.trim().length === 0;
     const installed = availableAgents(agents);
     const missing = unavailableAgents(agents);
     const modelState = state?.model;
@@ -749,12 +770,36 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
                             'button',
                             {
                                 type: 'button',
-                                style: PRIMARY_BUTTON_STYLE,
-                                onClick: () => void send(),
-                                disabled: !agentId || busy || starting,
-                                title: sendHint
+                                // One element for both jobs: the shape animates rather
+                                // than a second button appearing, so the control never
+                                // jumps under the pointer.
+                                style: showStop ? STOP_BUTTON_STYLE : SEND_BUTTON_STYLE,
+                                onClick: () => void (showStop ? stop() : send()),
+                                disabled: !agentId || starting || (showStop ? false : busy),
+                                title: showStop
+                                    ? 'Stop the agent and discard queued messages.'
+                                    : sendHint,
+                                'aria-label': showStop ? 'Stop the agent' : sendLabel
                             },
-                            sendLabel
+                            showStop
+                                ? React.createElement('span', { style: STOP_GLYPH_STYLE })
+                                : React.createElement(
+                                      'span',
+                                      { style: LABEL_LAYERS_STYLE },
+                                      // Both labels are mounted and cross-faded, so
+                                      // Send→Queue reads as a swap instead of a word
+                                      // being replaced between frames.
+                                      React.createElement(
+                                          'span',
+                                          { style: { ...LABEL_LAYER_STYLE, opacity: working ? 0 : 1 } },
+                                          'Send'
+                                      ),
+                                      React.createElement(
+                                          'span',
+                                          { style: { ...LABEL_LAYER_STYLE, opacity: working ? 1 : 0 } },
+                                          midTurn === 'steer' ? 'Steer' : 'Queue'
+                                      )
+                                  )
                         )
                     ),
                     React.createElement(
@@ -1296,11 +1341,64 @@ const BUTTON_STYLE: ReactNS.CSSProperties = {
     fontSize: 'inherit'
 };
 
-const PRIMARY_BUTTON_STYLE: ReactNS.CSSProperties = {
+/**
+ * The composer's one button.
+ *
+ * Fixed dimensions rather than padding: the stop state is the same element
+ * narrowed into a circle, which needs a width to animate from and to. `overflow`
+ * is hidden so the label cannot spill while the pill collapses.
+ */
+const SEND_BUTTON_STYLE: ReactNS.CSSProperties = {
     ...BUTTON_STYLE,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '64px',
+    height: '26px',
+    padding: 0,
+    overflow: 'hidden',
     background: 'var(--theia-button-background)',
     color: 'var(--theia-button-foreground)',
-    padding: '4px 14px'
+    transition: 'width 160ms cubic-bezier(0.4, 0, 0.2, 1), border-radius 160ms cubic-bezier(0.4, 0, 0.2, 1), background-color 160ms ease'
+};
+
+/** The same button, collapsed: a red disc that interrupts the turn. */
+const STOP_BUTTON_STYLE: ReactNS.CSSProperties = {
+    ...SEND_BUTTON_STYLE,
+    width: '26px',
+    borderRadius: '50%',
+    // The theme's error colour, so the stop reads as destructive in every theme
+    // instead of hardcoding a red.
+    background: 'var(--theia-errorBackground)'
+};
+
+/** The stop mark: a filled square, the conventional "stop" glyph. */
+const STOP_GLYPH_STYLE: ReactNS.CSSProperties = {
+    width: '9px',
+    height: '9px',
+    borderRadius: '1px',
+    background: 'currentColor'
+};
+
+/** Both labels sit in the same box so they cross-fade instead of jumping. */
+const LABEL_LAYERS_STYLE: ReactNS.CSSProperties = {
+    position: 'relative',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    height: '100%'
+};
+
+const LABEL_LAYER_STYLE: ReactNS.CSSProperties = {
+    position: 'absolute',
+    inset: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    whiteSpace: 'nowrap',
+    pointerEvents: 'none',
+    transition: 'opacity 120ms ease'
 };
 
 const STATUS_CHIP_STYLE: ReactNS.CSSProperties = {
