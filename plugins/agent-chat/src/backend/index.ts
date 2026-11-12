@@ -66,7 +66,21 @@ const AVAILABILITY_TTL_MS = 2_000;
  * handshake is the real check either way, so a changed flag surfaces as a protocol
  * error in the transcript instead of a silent failure.
  */
-type AgentCandidate = Omit<AgentDescriptor, 'available'>;
+/**
+ * An agent before this machine's availability is known.
+ *
+ * `command` is optional because an agent may exist only behind an AG-UI
+ * endpoint; `toDescriptor` normalises it to an empty string so the rest of the
+ * backend never has to ask whether a launch command exists.
+ */
+type AgentCandidate = {
+    id: string;
+    name: string;
+    protocol: AgentDescriptor['protocol'];
+    command?: string;
+    args?: readonly string[];
+    agui?: string;
+};
 
 /** One model as Pi reports it (`get_state`, `get_available_models`). */
 interface PiModel {
@@ -1517,14 +1531,14 @@ function toDescriptor(candidate: AgentCandidate, pluginId?: string): AgentDescri
         id: candidate.id,
         name: candidate.name,
         protocol: candidate.protocol,
-        command: candidate.command,
+        command: candidate.command ?? '',
         args: candidate.args ?? [],
         ...(agui ? { agui } : {}),
         ...(pluginId ? { pluginId } : {}),
         // "Available" means there is something to try: an AG-UI endpoint needs no
         // binary at all, and an agent that has one can be reached even when its CLI
         // is not installed (the endpoint may wrap another runtime).
-        available: agui !== undefined || commandAvailable(candidate.command)
+        available: agui !== undefined || commandAvailable(candidate.command ?? '')
     };
 }
 

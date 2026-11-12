@@ -2,6 +2,7 @@
 
 import type {
     AgentDescriptor,
+    AgentProtocol,
     AgentSessionHandle,
     AgentSessionOptions,
     AgentSessionSummary,

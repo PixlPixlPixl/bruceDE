@@ -38,7 +38,17 @@ export const WORKSPACE_SERVICE_IDS = {
     plugins: 'workspace.plugins',
     /** Repository state provided by the Git plugin. */
     gitRepository: 'git.repository',
-    /** Agent sessions provided by the agent-chat plugin. */
+    /**
+     * {@link AgentRuntimeService}: the agent runtime provided by the
+     * agent-orchestrator plugin.
+     *
+     * It owns the connections to agent CLIs and speaks one vocabulary (AG-UI
+     * events) for every protocol it adapts, so a chat panel is a projection of
+     * runtime state rather than a second implementation of ACP's event
+     * mappings. Any panel may consume it; it does not know what renders it.
+     */
+    agentRuntime: 'agent.runtime',
+    /** Agent sessions provided by the agent-chat plugin (summaries for Projects). */
     agentSessions: 'agent.sessions',
     /**
      * {@link AgentChatLauncherService}, provided by the agent-chat plugin on the
@@ -274,6 +284,226 @@ export interface AgentSessionSummary {
     readonly resume?: AgentSessionHandle;
     /** ISO timestamp of the last observed change. */
     readonly updatedAt?: string;
+}
+
+/**
+ * One entry of a rendered conversation.
+ *
+ * The runtime does not keep this: it emits {@link AgUiEvent}s and a consumer
+ * folds them into entries (see {@link applyAgUiEvents}). `role` stays here because
+ * every chat panel renders the same four kinds of line.
+ */
+export interface ChatEntry {
+    readonly role: 'user' | 'agent' | 'tool' | 'system';
+    readonly text: string;
+}
+
+/** One model the agent can switch to; `key` is the selection handle. */
+export interface AgentModelInfo {
+    readonly key: string;
+    readonly name: string;
+    readonly provider?: string;
+    readonly modelId: string;
+    readonly contextWindow?: number;
+}
+
+/** Model/thinking selection of a live session, as the agent reports it. */
+export interface AgentModelState {
+    readonly current?: AgentModelInfo;
+    readonly thinking?: string;
+    readonly thinkingLevels?: readonly string[];
+    readonly modelCount?: number;
+}
+
+/** Token accounting of a live session. */
+export interface AgentUsageInfo {
+    readonly contextTokens?: number | null;
+    readonly contextWindow?: number;
+    readonly contextPercent?: number | null;
+    readonly cacheHitPercent?: number;
+    readonly totalTokens?: number;
+    readonly cost?: number;
+}
+
+/** One command the agent exposes for `/name`. */
+export interface AgentCommand {
+    readonly name: string;
+    readonly description?: string;
+    readonly source?: string;
+}
+
+/** What the connected agent can do beyond plain prompting. */
+export interface AgentCapabilities {
+    readonly shell: boolean;
+    readonly midTurn: 'steer' | 'queue';
+}
+
+/**
+ * The vocabulary every protocol is normalised into.
+ *
+ * AG-UI's run/text/tool/custom event set, used **in process**: the runtime emits
+ * these objects and a panel folds them, so no HTTP hop or SSE parsing is
+ * involved. Protocol adapters that have structured data (an AG-UI server, a
+ * future ACP that reports tool calls properly) emit the native types; where a
+ * protocol only offers reduced text, the adapter still speaks the same names, and
+ * app-specific residue travels on `CUSTOM` (`icebox/user-message`,
+ * `icebox/system`) instead of inventing event types.
+ *
+ * Unknown event types are dropped by the folder rather than rejected, so a
+ * consumer never has to know every type the runtime can emit.
+ */
+export type AgUiEvent =
+    | { readonly type: 'RUN_STARTED' }
+    | { readonly type: 'RUN_FINISHED' }
+    | { readonly type: 'RUN_ERROR'; readonly message: string }
+    | { readonly type: 'TEXT_MESSAGE_START'; readonly messageId: string }
+    | { readonly type: 'TEXT_MESSAGE_CONTENT'; readonly messageId: string; readonly delta: string }
+    | { readonly type: 'TEXT_MESSAGE_END'; readonly messageId: string }
+    | { readonly type: 'TOOL_CALL_START'; readonly toolCallId: string; readonly toolCallName: string }
+    | { readonly type: 'TOOL_CALL_RESULT'; readonly toolCallId: string; readonly content: string }
+    | { readonly type: 'REASONING_MESSAGE_CONTENT'; readonly delta: string }
+    | { readonly type: 'CUSTOM'; readonly name: string; readonly value: Readonly<Record<string, unknown>> }
+    | { readonly type: 'STATE_SNAPSHOT'; readonly snapshot: Readonly<Record<string, unknown>> }
+    | { readonly type: 'STATE_DELTA'; readonly delta: readonly unknown[] };
+
+/** Folding state of a rendered conversation. */
+export interface AgentTranscript {
+    readonly entries: readonly ChatEntry[];
+    /** True while an `agent` entry is still being appended to. */
+    readonly streaming: boolean;
+}
+
+const MAX_TRANSCRIPT_ENTRIES = 400;
+
+/**
+ * Folds runtime events into transcript entries.
+ *
+ * Shared rather than panel-local so any consumer renders the same conversation
+ * from the same stream: this is the whole point of normalising the protocols.
+ * Tolerant by design — an unknown or malformed event leaves the transcript
+ * unchanged, which is what makes a missing AG-UI feature degrade to plain text
+ * instead of a broken panel.
+ */
+export function applyAgUiEvents(
+    transcript: AgentTranscript,
+    events: readonly AgUiEvent[]
+): AgentTranscript {
+    let entries: ChatEntry[] = [...transcript.entries];
+    let streaming = transcript.streaming;
+
+    const push = (role: ChatEntry['role'], text: string): void => {
+        entries.push({ role, text });
+        if (entries.length > MAX_TRANSCRIPT_ENTRIES) {
+            entries = entries.slice(entries.length - MAX_TRANSCRIPT_ENTRIES);
+        }
+    };
+
+    for (const event of events) {
+        switch (event.type) {
+            case 'TEXT_MESSAGE_START':
+                streaming = false;
+                break;
+            case 'TEXT_MESSAGE_CONTENT': {
+                const last = entries[entries.length - 1];
+                if (streaming && last?.role === 'agent') {
+                    entries[entries.length - 1] = { role: 'agent', text: last.text + event.delta };
+                } else {
+                    push('agent', event.delta);
+                    streaming = true;
+                }
+                break;
+            }
+            case 'TEXT_MESSAGE_END':
+                streaming = false;
+                break;
+            case 'REASONING_MESSAGE_CONTENT':
+                push('system', `thought: ${event.delta}`);
+                break;
+            case 'TOOL_CALL_START':
+                push('tool', `tool: ${event.toolCallName}`);
+                break;
+            case 'TOOL_CALL_RESULT':
+                push('tool', `tool: ${event.content}`);
+                break;
+            case 'RUN_ERROR':
+                push('system', event.message);
+                break;
+            case 'CUSTOM': {
+                const role = event.name === 'icebox/user-message'
+                    ? 'user'
+                    : event.name === 'icebox/system'
+                        ? 'system'
+                        : undefined;
+                const text = typeof event.value.text === 'string' ? event.value.text : undefined;
+                if (role && text) {
+                    if (role === 'user') {
+                        streaming = false;
+                    }
+                    push(role, text);
+                }
+                break;
+            }
+            default:
+                // STATE_*, run lifecycle and future types carry no transcript line.
+                break;
+        }
+    }
+    return { entries, streaming };
+}
+
+/**
+ * Snapshot of one runtime session, plus the events a consumer has not seen.
+ *
+ * `cursor` is opaque to the caller: pass the last one back to receive only newer
+ * events. A whole-history request omits it.
+ */
+export interface AgentRuntimeState {
+    readonly sessionId: string;
+    readonly agentId: string;
+    /** Protocol the live link speaks; absent before it starts. */
+    readonly protocol?: AgentProtocol;
+    readonly status: AgentStatus;
+    readonly error?: string;
+    readonly cwd?: string;
+    readonly capabilities?: AgentCapabilities;
+    readonly resume?: AgentSessionHandle;
+    readonly model?: AgentModelState;
+    readonly usage?: AgentUsageInfo;
+    readonly commands?: readonly AgentCommand[];
+    /** First line of the first prompt, for session lists. */
+    readonly title?: string;
+    /** Events emitted after the requested cursor, oldest first. */
+    readonly events: readonly AgUiEvent[];
+    readonly cursor: number;
+}
+
+/**
+ * The agent runtime: every protocol behind one interface.
+ *
+ * A chat panel sends a prompt and renders {@link AgentRuntimeState.events}; it
+ * never learns whether the agent speaks ACP, Pi's RPC mode or AG-UI, and it
+ * cannot spawn a process. Capabilities are requested per session and answered
+ * only when the adapter supports them, which is what lets a panel show a model
+ * picker and token accounting for ACP/Pi while AG-UI simply omits them.
+ */
+export interface AgentRuntimeService {
+    /** Agents available on this machine, from plugin declarations plus config. */
+    listAgents(): AgentDescriptor[] | Promise<AgentDescriptor[]>;
+    /** Binds a session to an agent, resuming an earlier conversation when given. */
+    open(sessionId: string, agentId: string, options?: AgentSessionOptions): Promise<AgentRuntimeState>;
+    /** Current state and events newer than `since`. */
+    state(sessionId: string, since?: number): Promise<AgentRuntimeState>;
+    /** Appends the prompt and starts the turn. */
+    send(sessionId: string, text: string): Promise<AgentRuntimeState>;
+    /** Releases the connection of a session whose panel is gone. */
+    release(sessionId: string): Promise<void>;
+    searchModels(sessionId: string, query: string, limit?: number): Promise<AgentModelInfo[]>;
+    selectModel(sessionId: string, modelKey: string): Promise<AgentRuntimeState>;
+    selectThinking(sessionId: string, level: string): Promise<AgentRuntimeState>;
+    runShell(sessionId: string, command: string): Promise<AgentRuntimeState>;
+    summary(sessionId: string): Promise<AgentSessionSummary>;
+    /** Every live session, for a list that adopts chats opened elsewhere. */
+    listSessions(): Promise<AgentSessionSummary[]>;
 }
 
 /** Payload of {@link WORKSPACE_EVENT_IDS.agentSessionChanged}. */
