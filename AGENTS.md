@@ -22,7 +22,7 @@ All plugins are **trusted native code**. Frontend modules run directly in the Th
 
 1. Discover `plugin.json` in the built-in `plugins/` directory (plus one grouping level,
    e.g. `plugins/agents/`) and the user plugin directory.
-2. Validate plugin ID, version, API version, entrypoints, and declared service dependencies. IDs are globally unique and namespaced (for example, `icebox.git`).
+2. Validate plugin ID, version, API version, entrypoints, and declared plugin dependencies (ids plus semver ranges). IDs are globally unique and namespaced (for example, `icebox.git`).
 3. Resolve plugin dependencies through Cordis. Missing dependencies or failed activation should be reported without silently opening a default workspace.
 4. Import the frontend ESM bundle into the existing renderer and the backend ESM bundle into the existing Node backend. These are normal host-context imports, not isolated runtimes.
 5. Adapt each module's `activate(api)` entrypoint into a Cordis-managed plugin Fiber. Contributions (panels, services, commands, listeners, timers, watchers) must be registered through disposable effects.
@@ -64,4 +64,4 @@ All plugins are **trusted native code**. Frontend modules run directly in the Th
 
 ## Direction
 
-Build in this order: stable manifest and API contracts; Cordis runtime and native ESM loading; panel ownership and deterministic disposal; typed service/event registry; settings and plugin manager with explicit trust warning; then real terminal, agent-chat, projects, file-browser, and Git plugins. Persist user layouts independently of plugin installation. Keep the startup canvas empty unless the user explicitly restores a saved layout.
+That sequence is complete: manifest and API contracts, the Cordis runtime with native ESM loading, panel ownership and deterministic disposal, the typed service/event registry, the plugin manager with its trust warning, and the terminal, agent-chat, projects, file-browser and Git plugins. What remains is breadth rather than foundation — an AG-UI transport plugin for agents that are already HTTP servers, a GenUI renderer driven by the `CUSTOM`/`STATE_*` events the runtime already forwards, and the next fixed-shape configuration that should become plugin data. Two invariants hold throughout: user layouts persist independently of plugin installation, and the startup canvas stays empty unless the user explicitly restores a saved layout.

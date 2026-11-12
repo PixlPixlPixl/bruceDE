@@ -99,12 +99,22 @@ export class PluginEventBus {
      * does not stop the remaining ones.
      */
     emit<T>(eventName: string, payload: T): void {
+        const report = (error: unknown): void => {
+            // eslint-disable-next-line no-console
+            console.error(`[plugin-host] Listener for "${eventName}" threw:`, error);
+        };
         for (const { listener } of this.listeners.get(eventName) ?? []) {
             try {
-                void listener(payload);
+                // `await` would serialise listeners and block the emitter, so the
+                // returned promise is handled in place instead. Without this, only
+                // a synchronous throw reached `catch`, and an async listener that
+                // rejected became an unhandled rejection — fatal in the backend.
+                const pending = listener(payload) as Promise<unknown> | void;
+                if (pending && typeof pending.then === 'function') {
+                    pending.then(undefined, report);
+                }
             } catch (error) {
-                // eslint-disable-next-line no-console
-                console.error(`[plugin-host] Listener for "${eventName}" threw:`, error);
+                report(error);
             }
         }
     }

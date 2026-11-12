@@ -25,11 +25,15 @@ checks before launching, so they work straight after `git clone` too. Pass
 ./status.sh                           # what is installed, built and up to date
 ./update.sh                           # git pull --ff-only, then rebuild what changed
 ./uninstall.sh                        # remove node_modules and build outputs
-./uninstall.sh --yes --purge-data     # also remove ~/.icebox (plugins, layout state)
+./uninstall.sh --yes --purge-data     # also remove ~/.icebox (plugins, projects, trust state)
 ./install.sh --target electron        # build the electron target now
 ./install.sh --target both            # build both targets
 ./install.sh --target none            # dependencies and plugins only
 ```
+
+Saved layouts are not in `~/.icebox`: they are written through the
+renderer's `StorageService` (the browser profile, or Electron's user-data
+directory), so `--purge-data` leaves them alone.
 
 `update.sh` rebuilds only the targets that already exist, so a browser-only
 install stays browser-only; `--target` overrides that. It refuses to pull over
@@ -159,7 +163,7 @@ See [plugins/README.md](./plugins/README.md). Each plugin folder has a `plugin.j
 - `packages/plugin-runtime/`: Cordis plugin manager, manifest validation, disposal helpers.
 - `packages/plugin-build/`: esbuild bundler for plugin entrypoints.
 - `packages/ui-kit/`: optional shared visual tokens/primitives.
-- `scripts/`: `icebox.mjs` (install/update/uninstall/start logic) and the ffmpeg addon repair step.
+- `scripts/`: `icebox.mjs` (install/update/uninstall/start logic), `brand-generated-html.mjs` (post-build window titles), `ensure-ffmpeg-addon.mjs` (Electron's ffmpeg repair) and `verify-agent-sessions.mjs` (the head-less agent harness behind `npm run verify:agent-sessions`).
 - `plugins/`: self-contained feature plugin packages (terminal, agent-chat, projects, file-browser, Git).
 - `plugins/agents/`: one data-only declaration per agent CLI (`plugin.json` + `package.json`,
   no code) — Pi, Gemini, Claude Code, OpenCode and Codex today.

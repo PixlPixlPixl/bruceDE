@@ -127,7 +127,7 @@ export async function discoverPlugins(roots: readonly PluginRoot[]): Promise<Dis
         await scan(root, root.path, 0);
     }
 
-    void resolveCrossDependencies(plugins, diagnostics);
+    resolveCrossDependencies(plugins, diagnostics);
     plugins.sort((a, b) => a.manifest.id.localeCompare(b.manifest.id));
     return { plugins, diagnostics };
 }
