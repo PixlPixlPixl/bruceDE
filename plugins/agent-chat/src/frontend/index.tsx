@@ -781,25 +781,29 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
                                     : sendHint,
                                 'aria-label': showStop ? 'Stop the agent' : sendLabel
                             },
-                            showStop
-                                ? React.createElement('span', { style: STOP_GLYPH_STYLE })
-                                : React.createElement(
-                                      'span',
-                                      { style: LABEL_LAYERS_STYLE },
-                                      // Both labels are mounted and cross-faded, so
-                                      // Send→Queue reads as a swap instead of a word
-                                      // being replaced between frames.
-                                      React.createElement(
-                                          'span',
-                                          { style: { ...LABEL_LAYER_STYLE, opacity: working ? 0 : 1 } },
-                                          'Send'
-                                      ),
-                                      React.createElement(
-                                          'span',
-                                          { style: { ...LABEL_LAYER_STYLE, opacity: working ? 1 : 0 } },
-                                          midTurn === 'steer' ? 'Steer' : 'Queue'
-                                      )
-                                  )
+                            // All three faces stay mounted and only change opacity.
+                            // Swapping one out for another would pop at the exact frame
+                            // the shape is mid-shrink, which is what made the morph look
+                            // like two controls trading places.
+                            React.createElement(
+                                'span',
+                                { style: LABEL_LAYERS_STYLE },
+                                React.createElement(
+                                    'span',
+                                    { style: { ...LABEL_LAYER_STYLE, opacity: showStop || working ? 0 : 1 } },
+                                    'Send'
+                                ),
+                                React.createElement(
+                                    'span',
+                                    { style: { ...LABEL_LAYER_STYLE, opacity: showStop || !working ? 0 : 1 } },
+                                    midTurn === 'steer' ? 'Steer' : 'Queue'
+                                ),
+                                React.createElement(
+                                    'span',
+                                    { style: { ...GLYPH_LAYER_STYLE, opacity: showStop ? 1 : 0 } },
+                                    React.createElement('span', { style: STOP_GLYPH_STYLE })
+                                )
+                            )
                         )
                     ),
                     React.createElement(
@@ -1370,6 +1374,23 @@ const STOP_BUTTON_STYLE: ReactNS.CSSProperties = {
     // The theme's error colour, so the stop reads as destructive in every theme
     // instead of hardcoding a red.
     background: 'var(--theia-errorBackground)'
+};
+
+/**
+ * The stop glyph's layer.
+ *
+ * Delayed slightly against the label fade: the square fades in once the pill has
+ * started narrowing, so it reads as the button becoming a disc rather than a
+ * square appearing beside the word Send.
+ */
+const GLYPH_LAYER_STYLE: ReactNS.CSSProperties = {
+    position: 'absolute',
+    inset: 0,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    pointerEvents: 'none',
+    transition: 'opacity 110ms ease 70ms'
 };
 
 /** The stop mark: a filled square, the conventional "stop" glyph. */
