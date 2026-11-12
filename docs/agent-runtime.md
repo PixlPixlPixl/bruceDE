@@ -50,6 +50,14 @@ behaves exactly as on `main`.
 
 ## Remaining steps, in order
 
+0. ~~**Harness.**~~ Done: `scripts/verify-agent-sessions.mjs` (`npm run
+   verify:agent-sessions`). It runs the built backend head-lessly with a fake
+   `BackendPluginAPI` — plugin-declared discovery, an AG-UI run through an SSE
+   stub, the dead-endpoint fallback, a real CLI session and release. It is the
+   net the split has to fall into: every assertion below must still pass when
+   `agent.runtime` replaces `agent.sessions` as its target, and a provider outage
+   is reported as skipped rather than failed so an external hiccup never masks a
+   regression.
 1. **Create `plugins/agent-orchestrator`.** Move `acp.ts`, `pi-rpc.ts`,
    `agui.ts`, `spawn.ts` and the session machinery out of
    `plugins/agent-chat/src/backend/index.ts`. In the runtime, `pushEntry` is the

@@ -11,6 +11,7 @@
     "build:plugin-packages": "npm run build:plugin-api && npm run build:plugin-runtime",
     "build:workspace-core": "npm run build:plugin-packages && npm --prefix workspace-core run build",
     "build:plugins": "node packages/plugin-build/build-all.mjs",
+    "verify:agent-sessions": "node scripts/verify-agent-sessions.mjs",
     "build:browser": "npm run build:workspace-core && npm run build:plugins && npm --prefix browser-app run bundle",
     "build:electron": "npm run build:workspace-core && npm run build:plugins && npm --prefix electron-app run bundle",
     "postinstall": "npm run build:workspace-core && node node_modules/@theia/cli/bin/theia.js check:theia-version",
