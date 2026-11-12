@@ -54,7 +54,7 @@ forward every argument to Theia's own `start` command unchanged:
 ./start-electron.sh --port 3001                      # native window on 3001
 ```
 
-`--hostname` is Theia's flag for the listen address (its help text calls it "the
+`--hostname` is Icebox's flag for the listen address (its help text calls it "the
 allowed hostname for connections", but it is passed straight to
 `server.listen(port, hostname)`). There is no `--host`: an unknown flag is ignored
 by Theia, so `--host 0.0.0.0` leaves the server on `localhost` and nothing outside
