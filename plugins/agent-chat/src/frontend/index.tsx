@@ -1437,8 +1437,12 @@ const GLYPH_LAYER_STYLE: ReactNS.CSSProperties = {
 
 /** The stop mark: a filled square, the conventional "stop" glyph. */
 const STOP_GLYPH_STYLE: ReactNS.CSSProperties = {
-    width: '9px',
-    height: '9px',
+    // Even, against the even 26px disc: an odd mark leaves a half-pixel margin
+    // on each side, and the browser snaps that half pixel to one edge, which
+    // paints the square visibly off-centre in the circle. 8px keeps the mark's
+    // weight and divides (26 - 8) evenly in two.
+    width: '8px',
+    height: '8px',
     borderRadius: '1px',
     // Cut out of the disc rather than drawn on it: a dark square on a red field is
     // the recognised stop mark, and the editor background is the surface the panel

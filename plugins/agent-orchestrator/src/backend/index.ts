@@ -1166,8 +1166,12 @@ export function activate(api: BackendPluginAPI): void {
             event: record => {
                 appendPiEvent(session, record);
                 if (record.type === 'agent_settled') {
+                    // Usage is derived from the session's entries, so it only
+                    // changes when a turn settles. Reading it here is what keeps
+                    // the context and cache chips current: without it they keep
+                    // the numbers from session start, which are 0% and no cache.
+                    void refreshUsage(session).then(() => touch(session));
                     drainQueue(session);
-                    touch(session);
                 }
             },
             uiRequest: record => answerPiUiRequest(session, connection, record),
@@ -1546,11 +1550,13 @@ function appendAcpUpdate(session: LiveSession, params: Record<string, unknown>):
     }
 
     if (kind === 'tool_call' || kind === 'tool_call_update') {
+        // The tool's own name and status only: the transcript's role label already
+        // reads "Tool", so a `tool:` prefix here would show it twice in one line.
         const title = typeof update.title === 'string' ? update.title : undefined;
         const status = typeof update.status === 'string' ? update.status : undefined;
         const label = [title, status].filter(Boolean).join(' — ');
         if (label) {
-            pushEntry(session, { role: 'tool', text: `tool: ${label}` });
+            pushEntry(session, { role: 'tool', text: label });
         }
         return;
     }
@@ -1613,13 +1619,13 @@ function appendAgUiEvent(session: LiveSession, event: AgUiEvent): void {
         }
         case 'TOOL_CALL_START': {
             const name = readString(event.toolCallName) ?? 'tool';
-            pushEntry(session, { role: 'tool', text: `tool: ${name}` });
+            pushEntry(session, { role: 'tool', text: name });
             return;
         }
         case 'TOOL_CALL_RESULT': {
             const content = readString(event.content);
             if (content) {
-                pushEntry(session, { role: 'tool', text: `tool: ${truncate(content, 300)}` });
+                pushEntry(session, { role: 'tool', text: truncate(content, 300) });
             }
             return;
         }
@@ -1710,14 +1716,14 @@ function appendPiEvent(session: LiveSession, record: Record<string, unknown>): v
 
     if (type === 'tool_execution_start') {
         const name = typeof record.toolName === 'string' ? record.toolName : 'tool';
-        pushEntry(session, { role: 'tool', text: `tool: ${name}` });
+        pushEntry(session, { role: 'tool', text: name });
         return;
     }
 
     if (type === 'tool_execution_end') {
         if (record.isError === true) {
             const name = typeof record.toolName === 'string' ? record.toolName : 'tool';
-            pushEntry(session, { role: 'tool', text: `tool: ${name} failed` });
+            pushEntry(session, { role: 'tool', text: `${name} failed` });
         }
         return;
     }
@@ -2095,7 +2101,7 @@ function piTranscript(messages: readonly Record<string, unknown>[]): ChatEntry[]
                         entries.push({ role: 'agent', text });
                     }
                 } else if (kind === 'toolCall') {
-                    entries.push({ role: 'tool', text: `tool: ${readString(block.name) ?? 'tool'}` });
+                    entries.push({ role: 'tool', text: readString(block.name) ?? 'tool' });
                 }
             }
             continue;
@@ -2103,7 +2109,7 @@ function piTranscript(messages: readonly Record<string, unknown>[]): ChatEntry[]
         if (role === 'toolResult') {
             const name = readString(message.toolName) ?? 'tool';
             const text = piContentText(message.content);
-            entries.push({ role: 'tool', text: text ? `tool: ${name}\n${text}` : `tool: ${name}` });
+            entries.push({ role: 'tool', text: text ? `${name}\n${text}` : name });
             continue;
         }
         if (role === 'bashExecution') {

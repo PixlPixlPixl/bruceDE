@@ -301,7 +301,13 @@ async function main() {
     await sessions.send('check-agui', 'hello from the harness');
     const afterAgui = await waitFor(sessions, 'check-agui', state => text(state).includes('stub answer'));
     check('AG-UI run streams an agent entry', text(afterAgui).includes('agent:stub answer'), text(afterAgui));
-    check('AG-UI tool result reaches the transcript', text(afterAgui).includes('tool: thread '), text(afterAgui));
+    // A tool line is the role label plus the tool's own name or result: the text
+    // must not repeat the label, which is what made a call read "Tool tool: bash".
+    check('AG-UI tool call is named without repeating the label',
+        text(afterAgui).includes('tool:echo'), text(afterAgui));
+    check('AG-UI tool result reaches the transcript', text(afterAgui).includes('tool:thread '), text(afterAgui));
+    check('no transcript entry repeats its own role label',
+        !text(afterAgui).includes('tool:tool:'), text(afterAgui));
     check('AG-UI session settles back to idle', afterAgui?.status === 'idle', String(afterAgui?.status));
     check('AG-UI session stores a thread handle',
         afterAgui?.resume?.protocol === 'agui' && Boolean(afterAgui?.resume?.sessionId),

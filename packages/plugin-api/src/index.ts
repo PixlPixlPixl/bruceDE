@@ -457,10 +457,13 @@ export function applyAgUiEvents(
                 push('system', `thought: ${event.delta}`);
                 break;
             case 'TOOL_CALL_START':
-                push('tool', `tool: ${event.toolCallName}`);
+                push('tool', event.toolCallName);
                 break;
             case 'TOOL_CALL_RESULT':
-                push('tool', `tool: ${event.content}`);
+                // The role is already the label: the panel renders a tool entry as
+                // "Tool" plus this text, so a `tool:` prefix here would show it
+                // twice in the same line.
+                push('tool', event.content);
                 break;
             case 'RUN_ERROR':
                 push('system', event.message);
