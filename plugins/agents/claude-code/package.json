@@ -1,5 +1,5 @@
 {
-  "name": "@icebox/plugin-agent-claude-code",
+  "name": "@icebox/agent-claude-code",
   "version": "0.1.0",
   "private": true,
   "description": "Agent descriptor for Claude Code; data only, no build step."

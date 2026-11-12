@@ -1,0 +1,6 @@
+{
+  "name": "@icebox/agent-codex",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agent descriptor for Codex; data only, no build step."
+}

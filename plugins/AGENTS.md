@@ -4,7 +4,8 @@ Compact instructions for agents adding plugins to Icebox.
 
 ## Rule zero
 
-A plugin is **one self-contained folder** under `plugins/<plugin-id>/`. It owns its
+A plugin is **one self-contained folder** under `plugins/<plugin-id>/`, or under
+`plugins/agents/<agent-id>/` when it is a data-only agent declaration. It owns its
 manifest, package metadata, source, assets and built bundles. The host discovers
 and loads it as-is: **never edit `workspace-core/`, `packages/`, or the app targets
 to add a plugin.** If a plugin cannot work without host changes, the runtime is
@@ -31,7 +32,7 @@ A plugin may also have **no entrypoints at all** when it contributes only
 manifest data (`contributes.agents`): the host reads `plugin.json` at discovery
 time and never imports code, so nothing needs to be built and no trust prompt is
 warranted for code that does not exist. `"entrypoints": {}` plus at least one
-contribution is the whole plugin — see `plugins/agent-pi/` (`plugin.json` and
+contribution is the whole plugin — see `plugins/agents/pi/` (`plugin.json` and
 `package.json`, nothing else).
 
 `[!]` The bundler only detects `src/backend/index.ts` (not `.tsx`/`.mts`). Keep the

@@ -30,36 +30,77 @@ export interface DiscoveryResult {
 const MANIFEST_FILE = 'plugin.json';
 
 /**
+ * How many grouping levels sit above a plugin folder.
+ *
+ * `plugins/agents/gemini` is one grouping folder above the plugin, which is what
+ * keeps a growing list of agent plugins from crowding the plugin root. A folder
+ * that itself holds a manifest is a plugin and is never descended into, so
+ * `src/` and `dist/` can never be mistaken for plugins.
+ */
+const MAX_GROUPING_DEPTH = 1;
+
+/**
  * Scans every plugin root for `plugin.json` manifests.
  *
- * Plugins are folders, not package installs, so discovery is a plain directory
- * walk one level deep. Failures are collected as diagnostics instead of being
- * thrown: one broken third-party plugin must not prevent the workspace from
- * starting.
+ * Plugins are folders, not package installs, so discovery is a directory walk:
+ * manifests in the root, plus one level of grouping folders. Failures are
+ * collected as diagnostics instead of being thrown: one broken third-party
+ * plugin must not prevent the workspace from starting.
  */
 export async function discoverPlugins(roots: readonly PluginRoot[]): Promise<DiscoveryResult> {
     const plugins: DiscoveredPlugin[] = [];
     const diagnostics: PluginDiagnostic[] = [];
     const seenIds = new Map<string, string>();
 
-    for (const root of roots) {
-        let entries: string[];
+    const accept = async (root: PluginRoot, directory: string, manifestPath: string, raw: string): Promise<void> => {
+        let manifest: PluginManifest;
         try {
-            entries = await fs.readdir(root.path);
+            manifest = validatePluginManifest(JSON.parse(raw), manifestPath);
         } catch (error) {
             diagnostics.push({
-                directory: root.path,
-                message: `Cannot read plugin root: ${describeError(error)}`
+                directory,
+                message: error instanceof PluginManifestError ? error.message : describeError(error)
             });
-            continue;
+            return;
+        }
+
+        const previous = seenIds.get(manifest.id);
+        if (previous) {
+            diagnostics.push({
+                pluginId: manifest.id,
+                directory,
+                message: `Duplicate plugin id "${manifest.id}"; already discovered at ${previous}. Ignoring this copy.`
+            });
+            return;
+        }
+        seenIds.set(manifest.id, directory);
+
+        const entrypoints = await resolveEntrypoints(directory, manifest, diagnostics);
+        plugins.push({ manifest, directory, builtIn: root.builtIn, manifestPath, ...entrypoints });
+    };
+
+    const scan = async (root: PluginRoot, directory: string, depth: number): Promise<void> => {
+        let entries: string[];
+        try {
+            entries = await fs.readdir(directory);
+        } catch (error) {
+            diagnostics.push({
+                directory,
+                message: `Cannot read plugin ${depth === 0 ? 'root' : 'folder'}: ${describeError(error)}`
+            });
+            return;
         }
 
         entries.sort();
         for (const entryName of entries) {
-            const directory = path.join(root.path, entryName);
+            // Hidden folders and installed trees are never grouping folders.
+            if (entryName.startsWith('.') || entryName === 'node_modules') {
+                continue;
+            }
+            const child = path.join(directory, entryName);
             let stats;
             try {
-                stats = await fs.stat(directory);
+                stats = await fs.stat(child);
             } catch {
                 continue;
             }
@@ -67,40 +108,23 @@ export async function discoverPlugins(roots: readonly PluginRoot[]): Promise<Dis
                 continue;
             }
 
-            const manifestPath = path.join(directory, MANIFEST_FILE);
+            const manifestPath = path.join(child, MANIFEST_FILE);
             let raw: string;
             try {
                 raw = await fs.readFile(manifestPath, 'utf8');
             } catch {
-                // Not every folder in a plugin root is a plugin.
+                // No manifest: either a grouping folder, or not a plugin at all.
+                if (depth < MAX_GROUPING_DEPTH) {
+                    await scan(root, child, depth + 1);
+                }
                 continue;
             }
-
-            let manifest: PluginManifest;
-            try {
-                manifest = validatePluginManifest(JSON.parse(raw), manifestPath);
-            } catch (error) {
-                diagnostics.push({
-                    directory,
-                    message: error instanceof PluginManifestError ? error.message : describeError(error)
-                });
-                continue;
-            }
-
-            const previous = seenIds.get(manifest.id);
-            if (previous) {
-                diagnostics.push({
-                    pluginId: manifest.id,
-                    directory,
-                    message: `Duplicate plugin id "${manifest.id}"; already discovered at ${previous}. Ignoring this copy.`
-                });
-                continue;
-            }
-            seenIds.set(manifest.id, directory);
-
-            const entrypoints = await resolveEntrypoints(directory, manifest, diagnostics);
-            plugins.push({ manifest, directory, builtIn: root.builtIn, manifestPath, ...entrypoints });
+            await accept(root, child, manifestPath, raw);
         }
+    };
+
+    for (const root of roots) {
+        await scan(root, root.path, 0);
     }
 
     void resolveCrossDependencies(plugins, diagnostics);

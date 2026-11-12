@@ -1,0 +1,19 @@
+{
+    "id": "icebox.agent-codex",
+    "name": "Codex",
+    "version": "0.1.0",
+    "apiVersion": 1,
+    "description": "Declares the Codex ACP adapter for agent chat. OpenAI Codex ships an MCP server and a non-interactive mode, not ACP, so this expects an adapter that speaks ACP on stdio to be installed separately.",
+    "entrypoints": {},
+    "contributes": {
+        "agents": [
+            {
+                "id": "codex",
+                "name": "Codex (ACP adapter)",
+                "protocol": "acp",
+                "command": "codex-acp",
+                "args": []
+            }
+        ]
+    }
+}

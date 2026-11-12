@@ -15,11 +15,13 @@ All plugins are **trusted native code**. Frontend modules run directly in the Th
 - `packages/plugin-api/`: Versioned, stable TypeScript contracts exposed to plugin authors. Keep Cordis and Theia implementation details behind this API where practical.
 - `packages/plugin-runtime/`: Cordis contexts/Fibers and the Cordis plugin loader. Frontend and backend both run Cordis core; a backend entrypoint is imported from disk with a dynamic `import()` of a validated `file://` URL, and `@icebox/plugin-runtime/loader` exposes the Cordis `Loader` for resolution work that needs it. Cordis owns activation, dependency ordering, service/event lifecycle, and disposal.
 - `packages/ui-kit/`: Optional shared CSS tokens and reusable UI primitives. It must not constrain plugin authors; custom React/TSX, CSS, SVG, canvas, and native Theia widgets are allowed.
-- `plugins/<plugin-id>/`: One self-contained folder/package per feature. Each owns its manifest, package metadata, frontend/backend source, assets, and built bundles. Initial feature folders: terminal, agent-chat, projects, file-browser, and git. Agent instructions for creating one: [plugins/AGENTS.md](./plugins/AGENTS.md).
+- `plugins/<plugin-id>/`: One self-contained folder/package per feature. Data-only
+  agent declarations live one level down, in `plugins/agents/<agent-id>/`. Each owns its manifest, package metadata, frontend/backend source, assets, and built bundles. Initial feature folders: terminal, agent-chat, projects, file-browser, and git. Agent instructions for creating one: [plugins/AGENTS.md](./plugins/AGENTS.md).
 
 ## Plugin package and loading flow
 
-1. Discover `plugin.json` in the built-in `plugins/` directory and the user plugin directory.
+1. Discover `plugin.json` in the built-in `plugins/` directory (plus one grouping level,
+   e.g. `plugins/agents/`) and the user plugin directory.
 2. Validate plugin ID, version, API version, entrypoints, and declared service dependencies. IDs are globally unique and namespaced (for example, `icebox.git`).
 3. Resolve plugin dependencies through Cordis. Missing dependencies or failed activation should be reported without silently opening a default workspace.
 4. Import the frontend ESM bundle into the existing renderer and the backend ESM bundle into the existing Node backend. These are normal host-context imports, not isolated runtimes.

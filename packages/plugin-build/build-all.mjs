@@ -14,27 +14,46 @@ const repositoryRoot = path.resolve(here, '..', '..');
 const pluginsRoot = path.join(repositoryRoot, 'plugins');
 
 async function main() {
-    let entries;
     try {
-        entries = await fs.readdir(pluginsRoot, { withFileTypes: true });
+        await fs.access(pluginsRoot);
     } catch (error) {
         throw new Error(`Cannot read plugin directory ${pluginsRoot}: ${message(error)}`);
     }
 
     const failures = [];
     let built = 0;
-    for (const entry of entries.filter(candidate => candidate.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
-        const pluginDir = path.join(pluginsRoot, entry.name);
-        try {
-            await fs.access(path.join(pluginDir, 'plugin.json'));
-        } catch {
-            continue;
+
+    /** Mirrors `plugin-discovery.ts`: root manifests, plus one grouping level. */
+    const collect = async (directory, depth) => {
+        const found = [];
+        for (const entry of (await fs.readdir(directory, { withFileTypes: true }))
+            .filter(candidate => candidate.isDirectory())
+            .sort((a, b) => a.name.localeCompare(b.name))) {
+            if (entry.name.startsWith('.') || entry.name === 'node_modules') {
+                continue;
+            }
+            const pluginDir = path.join(directory, entry.name);
+            try {
+                await fs.access(path.join(pluginDir, 'plugin.json'));
+            } catch {
+                // A folder without a manifest is a grouping folder (plugins/agents).
+                if (depth < 1) {
+                    found.push(...await collect(pluginDir, depth + 1));
+                }
+                continue;
+            }
+            found.push(pluginDir);
         }
+        return found;
+    };
+
+    const pluginDirs = await collect(pluginsRoot, 0);
+    for (const pluginDir of pluginDirs) {
         try {
             await buildPlugin(pluginDir);
             built++;
         } catch (error) {
-            failures.push(`${entry.name}: ${message(error)}`);
+            failures.push(`${path.relative(pluginsRoot, pluginDir)}: ${message(error)}`);
         }
     }
 

@@ -118,9 +118,10 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   validating it against the known three. Disabling the plugin disposes every live
   connection it owns — a driver holds child processes, and Cordis only tears down
   fibers.
-- **Agent plugins** (`icebox.agent-pi`, `icebox.agent-gemini`,
-  `icebox.agent-claude-code`, `icebox.agent-opencode`, plus anything a user drops
-  in) — data only: a `plugin.json` whose `contributes.agents` names one agent CLI.
+- **Agent plugins** (all under `plugins/agents/`: `icebox.agent-pi`,
+  `icebox.agent-gemini`, `icebox.agent-claude-code`, `icebox.agent-opencode`,
+  `icebox.agent-codex`, plus anything a user drops in) — data only: a `plugin.json`
+  whose `contributes.agents` names one agent CLI.
   The host reads them at discovery time and never imports code, so they need no
   build step and no entrypoints. Agent Chat turns them into picker entries,
   enabled-or-not exactly as the plugin manager says. This is the pattern for
@@ -233,15 +234,16 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   **Agents are plugins.** Nothing about a specific agent is compiled into this
   panel: each one is declared by a plugin's manifest and read through
   `workspace.plugins`, the host's read-only plugin catalogue. One plugin per
-  agent, data only — `plugins/agent-pi/`, `agent-gemini/`, `agent-claude-code/`
-  and `agent-opencode/` are a `plugin.json` with `"entrypoints": {}` and
+  agent, data only — everything under `plugins/agents/` (`pi/`, `gemini/`,
+  `claude-code/`, `opencode/`, `codex/`) is a `plugin.json` with
+  `"entrypoints": {}` and
   `contributes.agents`, plus a `package.json`, and nothing else:
 
   ```json
   { "id": "icebox.agent-codex", "name": "Codex", "version": "0.1.0", "apiVersion": 1,
     "entrypoints": {},
     "contributes": { "agents": [
-      { "id": "codex", "name": "Codex", "protocol": "acp", "command": "codex", "args": ["acp"] }
+      { "id": "codex", "name": "Codex (ACP adapter)", "protocol": "acp", "command": "codex-acp" }
     ] } }
   ```
 

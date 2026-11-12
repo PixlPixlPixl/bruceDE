@@ -132,7 +132,8 @@ The Electron app carries `productName: "Icebox"` and version `0.1.0` in `electro
 
 The runtime is implemented and covers the full contract plugins rely on:
 
-1. **Discovery** — the backend scans the built-in `plugins/` folder and `~/.icebox/plugins`, validating every `plugin.json` before importing anything (`workspace-core/src/node/plugin-discovery.ts`).
+1. **Discovery** — the backend scans the built-in `plugins/` folder (including `plugins/agents/`,
+   the grouping folder for data-only agent declarations) and `~/.icebox/plugins`, validating every `plugin.json` before importing anything (`workspace-core/src/node/plugin-discovery.ts`).
 2. **Frontend ESM loading** — bundles are served from the backend (same-origin `fetch` in the browser target) or handed over the existing RPC channel when the renderer runs from a `file://` origin (Electron), then dynamically imported. Shared host modules (`react`, `@lumino/widgets`, Theia browser/common) resolve to the host's own instances, so plugin widgets are real Lumino widgets (`workspace-core/src/browser/plugin/`).
 3. **Cordis activation/disposal** — each plugin runs in its own Cordis fiber; unloading drains its disposers in reverse order (`packages/plugin-runtime/src/manager.ts`).
 4. **Panel ownership + layout persistence** — every panel instance is created through one host `WidgetManager` factory, so panels are tracked by owner *and* persisted by Theia's layout restorer. A plugin unload closes the panels it opened; a restart re-opens the ones the user left open (`workspace-core/src/browser/workspace-panel-factory.ts`).
@@ -160,6 +161,8 @@ See [plugins/README.md](./plugins/README.md). Each plugin folder has a `plugin.j
 - `packages/ui-kit/`: optional shared visual tokens/primitives.
 - `scripts/`: `icebox.mjs` (install/update/uninstall/start logic) and the ffmpeg addon repair step.
 - `plugins/`: self-contained feature plugin packages (terminal, agent-chat, projects, file-browser, Git).
+- `plugins/agents/`: one data-only declaration per agent CLI (`plugin.json` + `package.json`,
+  no code) — Pi, Gemini, Claude Code, OpenCode and Codex today.
 - `electron-app/` and `browser-app/`: Theia application targets.
 
 See [AGENTS.md](./AGENTS.md) for the product goal, native trust model, plugin loading flow, communication rules, and implementation direction.

@@ -3,7 +3,7 @@
     "name": "OpenCode",
     "version": "0.1.0",
     "apiVersion": 1,
-    "description": "Declares the OpenCode agent CLI for agent chat. No code: the descriptor is manifest data.",
+    "description": "Declares the OpenCode CLI for agent chat, using its ACP mode. No code: the descriptor is manifest data.",
     "entrypoints": {},
     "contributes": {
         "agents": [

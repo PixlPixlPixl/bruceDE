@@ -29,6 +29,7 @@
     "electron-app",
     "workspace-core",
     "packages/*",
-    "plugins/*"
+    "plugins/*",
+    "plugins/agents/*"
   ]
 }
