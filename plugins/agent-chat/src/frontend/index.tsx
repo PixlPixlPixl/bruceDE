@@ -1371,9 +1371,11 @@ const STOP_BUTTON_STYLE: ReactNS.CSSProperties = {
     ...SEND_BUTTON_STYLE,
     width: '26px',
     borderRadius: '50%',
-    // The theme's error colour, so the stop reads as destructive in every theme
-    // instead of hardcoding a red.
-    background: 'var(--theia-errorBackground)'
+    // The theme's vivid error red, not its error *surface*: `errorBackground` is a
+    // darkened wash (a maroon in the dark theme) meant for alert panels, and a stop
+    // control has to read as red at 26px. Both are theme variables, so a light or
+    // high-contrast theme still supplies its own red.
+    background: 'var(--theia-editorError-foreground, var(--theia-errorBackground))'
 };
 
 /**
@@ -1398,7 +1400,10 @@ const STOP_GLYPH_STYLE: ReactNS.CSSProperties = {
     width: '9px',
     height: '9px',
     borderRadius: '1px',
-    background: 'currentColor'
+    // Cut out of the disc rather than drawn on it: a dark square on a red field is
+    // the recognised stop mark, and the editor background is the surface the panel
+    // actually sits on.
+    background: 'var(--theia-editor-background, #ffffff)'
 };
 
 /** Both labels sit in the same box so they cross-fade instead of jumping. */
