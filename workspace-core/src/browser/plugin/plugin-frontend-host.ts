@@ -83,7 +83,7 @@ export class PluginFrontendHost {
                 }
             },
             createApi: (_ctx, bag: DisposerBag) =>
-                this.kernel.createApi(manifest, descriptor.directory, bag)
+                this.kernel.createApi(manifest, descriptor.directory, descriptor.builtIn, bag)
         });
 
         if (record.state === 'active') {

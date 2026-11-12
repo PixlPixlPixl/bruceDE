@@ -101,7 +101,7 @@ export class PluginKernel {
         createReactWidget: (render: () => React.ReactNode): Widget => new HostReactWidget(render)
     };
 
-    createApi(manifest: PluginManifest, directory: string, bag: DisposerBag): FrontendPluginAPI {
+    createApi(manifest: PluginManifest, directory: string, builtIn: boolean, bag: DisposerBag): FrontendPluginAPI {
         const pluginId = manifest.id;
         const instanceIds = new Set<string>();
         const { panelRegistry, docking, commands, services, events, hostPanelFactories } = this.options;
@@ -216,7 +216,9 @@ export class PluginKernel {
             services: pluginServices,
             events: pluginEvents,
             ui: this.panelHostTools,
-            origin: { builtIn: !directory.includes('.icebox'), directory },
+            // Provenance comes from discovery, as on the backend: a plugin under
+            // `$ICEBOX_PLUGINS_DIR` is third-party even when the path says nothing.
+            origin: { builtIn, directory },
             onDispose: (disposer: PluginDisposer) => {
                 bag.add(disposer);
             }

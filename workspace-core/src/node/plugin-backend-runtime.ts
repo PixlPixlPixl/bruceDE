@@ -67,7 +67,8 @@ export class PluginBackendRuntime {
         const record = await this.manager.load<BackendPluginAPI>({
             manifest,
             loadModule: () => importBackendModule(backendEntrypoint),
-            createApi: (_ctx, bag) => createBackendApi(manifest, plugin.directory, bag, this.services, this.events)
+            createApi: (_ctx, bag) =>
+                createBackendApi(manifest, plugin.directory, plugin.builtIn, bag, this.services, this.events)
         });
         this.records.set(manifest.id, {
             state: record.state,
@@ -109,6 +110,7 @@ async function importBackendModule(absolutePath: string): Promise<unknown> {
 function createBackendApi(
     manifest: PluginManifest,
     directory: string,
+    builtIn: boolean,
     bag: DisposerBag,
     serviceRegistry: PluginServiceRegistry,
     eventBus: PluginEventBus
@@ -142,7 +144,10 @@ function createBackendApi(
             },
             emit: <T>(eventName: string, payload: T) => eventBus.emit(eventName, payload)
         },
-        origin: { builtIn: !directory.includes('.icebox'), directory },
+        // Provenance is decided by which root found the plugin, never by looking
+        // for `.icebox` in the path: `$ICEBOX_PLUGINS_DIR` can be anywhere, and
+        // guessing from text made a third-party folder look like a built-in one.
+        origin: { builtIn, directory },
         workspace: { cwd: process.cwd(), root: process.cwd() },
         onDispose: disposer => {
             bag.add(disposer);

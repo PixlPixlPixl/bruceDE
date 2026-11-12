@@ -55,6 +55,22 @@ export function activate(api: BackendPluginAPI): void {
     /** Per session: where the fold is, and what it has produced. */
     const transcripts = new Map<string, { cursor: number; transcript: AgentTranscript }>();
 
+    /**
+     * Folds run one at a time per session.
+     *
+     * The panel polls every 700ms and its interval does not wait for a previous
+     * reply, so two requests can read the same cursor. Folding both would apply
+     * the same events twice and duplicate every line; serialising keeps one
+     * reader per session advancing the cursor it started from.
+     */
+    const queues = new Map<string, Promise<unknown>>();
+    const serial = <T>(sessionId: string, operation: () => Promise<T>): Promise<T> => {
+        const previous = queues.get(sessionId) ?? Promise.resolve();
+        const next = previous.then(operation, operation);
+        queues.set(sessionId, next.catch(() => undefined));
+        return next;
+    };
+
     const foldState = (sessionId: string): { cursor: number; transcript: AgentTranscript } => {
         let state = transcripts.get(sessionId);
         if (!state) {
@@ -93,15 +109,15 @@ export function activate(api: BackendPluginAPI): void {
             return orchestration ? orchestration.listAgents() : [];
         },
 
-        openSession: async (sessionId: string, agentId: string, options?: AgentSessionOptions) => {
-            // Re-binding starts a fresh conversation, so the fold must forget the
-            // transcript it rendered for the previous one.
-            transcripts.delete(sessionId);
-            const state = await requireRuntime().open(sessionId, agentId, options);
-            return absorb(state);
-        },
+        openSession: (sessionId: string, agentId: string, options?: AgentSessionOptions) =>
+            serial(sessionId, async () => {
+                // Re-binding starts a fresh conversation, so the fold must forget
+                // the transcript it rendered for the previous one.
+                transcripts.delete(sessionId);
+                return absorb(await requireRuntime().open(sessionId, agentId, options));
+            }),
 
-        state: async sessionId => {
+        state: (sessionId: string) => serial(sessionId, async () => {
             const orchestration = runtime();
             if (!orchestration) {
                 // No runtime: the panel keeps whatever it already rendered.
@@ -115,7 +131,7 @@ export function activate(api: BackendPluginAPI): void {
             }
             const folded = foldState(sessionId);
             return absorb(await orchestration.state(sessionId, folded.cursor));
-        },
+        }),
 
         summary: async (sessionId): Promise<AgentSessionSummary> => {
             const orchestration = runtime();
@@ -130,21 +146,26 @@ export function activate(api: BackendPluginAPI): void {
             return orchestration ? orchestration.listSessions() : [];
         },
 
-        send: async (sessionId, text) => absorb(await requireRuntime().send(sessionId, text)),
+        send: (sessionId, text) => serial(sessionId, async () => absorb(await requireRuntime().send(sessionId, text))),
 
-        release: async sessionId => {
-            transcripts.delete(sessionId);
-            await runtime()?.release(sessionId);
-        },
+        release: (sessionId: string) =>
+            serial(sessionId, async () => {
+                transcripts.delete(sessionId);
+                queues.delete(sessionId);
+                await runtime()?.release(sessionId);
+            }),
 
         searchModels: async (sessionId, query, limit): Promise<AgentModelInfo[]> =>
             requireRuntime().searchModels(sessionId, query, limit),
 
-        selectModel: async (sessionId, modelKey) => absorb(await requireRuntime().selectModel(sessionId, modelKey)),
+        selectModel: (sessionId, modelKey) =>
+            serial(sessionId, async () => absorb(await requireRuntime().selectModel(sessionId, modelKey))),
 
-        selectThinking: async (sessionId, level) => absorb(await requireRuntime().selectThinking(sessionId, level)),
+        selectThinking: (sessionId, level) =>
+            serial(sessionId, async () => absorb(await requireRuntime().selectThinking(sessionId, level))),
 
-        runShell: async (sessionId, command) => absorb(await requireRuntime().runShell(sessionId, command))
+        runShell: (sessionId, command) =>
+            serial(sessionId, async () => absorb(await requireRuntime().runShell(sessionId, command)))
     };
 
     api.services.provide(WORKSPACE_SERVICE_IDS.agentSessions, service);

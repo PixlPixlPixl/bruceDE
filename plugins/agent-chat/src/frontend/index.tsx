@@ -131,7 +131,12 @@ export function activate(api: FrontendPluginAPI): void {
 
 /** Human name of the wire protocol, shown next to an agent and in the header. */
 function protocolLabel(protocol: AgentProtocol | undefined): string {
-    return protocol ? AGENT_PROTOCOL_LABELS[protocol] : '';
+    if (!protocol) {
+        return '';
+    }
+    // A protocol can come from a plugin that this build does not name; showing
+    // the id is better than an empty badge that hides which link is in use.
+    return AGENT_PROTOCOL_LABELS[protocol] ?? protocol;
 }
 
 /**

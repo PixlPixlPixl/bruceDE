@@ -121,7 +121,7 @@ function catalogue(aguiPort) {
  * `agent.sessions` meet exactly as they do inside the app: one registry, two
  * plugins, no renderer in between.
  */
-function fakeApi({ id, directory, services, cwd }) {
+function fakeApi({ id, directory, services, cwd, disposers = [] }) {
     return {
         manifest: { id, name: id, version: '0.1.0', apiVersion: 1, entrypoints: {} },
         side: 'backend',
@@ -130,7 +130,15 @@ function fakeApi({ id, directory, services, cwd }) {
         services: {
             provide: (serviceId, service) => {
                 services.set(serviceId, service);
-                return () => services.delete(serviceId);
+                // Registered like the real host: unloading the plugin must retract
+                // the service, which is what the disabled-runtime group observes.
+                const dispose = () => {
+                    if (services.get(serviceId) === service) {
+                        services.delete(serviceId);
+                    }
+                };
+                disposers.push(dispose);
+                return dispose;
             },
             get: serviceId => {
                 const service = services.get(serviceId);
@@ -145,7 +153,9 @@ function fakeApi({ id, directory, services, cwd }) {
             }
         },
         events: { emit: () => undefined, on: () => () => undefined },
-        onDispose: () => undefined,
+        onDispose: disposer => {
+            disposers.push(disposer);
+        },
         provided: services
     };
 }
@@ -163,6 +173,9 @@ async function main() {
     const services = new Map([
         ['workspace.plugins', { list: () => catalogue(stub.port) }]
     ]);
+    // Declared before activation: `fakeApi` collects the orchestrator's
+    // disposers as it registers them, and the last group calls them.
+    const orchestratorDisposers = [];
     const shared = { catalogueEntries: [], services, cwd: root };
 
     console.log('Agent session check');
@@ -170,7 +183,8 @@ async function main() {
     orchestratorModule.activate(fakeApi({
         ...shared,
         id: 'icebox.agent-orchestrator',
-        directory: path.join(root, 'plugins', 'agent-orchestrator')
+        directory: path.join(root, 'plugins', 'agent-orchestrator'),
+        disposers: orchestratorDisposers
     }));
     const panelModule = await import(`file://${PANEL_BACKEND}`);
     panelModule.activate(fakeApi({
@@ -180,6 +194,12 @@ async function main() {
     }));
 
     const sessions = services.get('agent.sessions');
+    // Captured so the last group can unload the orchestrator without the app.
+    const disposeOrchestrator = () => {
+        for (const dispose of orchestratorDisposers.splice(0)) {
+            dispose();
+        }
+    };
     const runtime = services.get('agent.runtime');
     check('orchestrator provides the runtime', typeof runtime?.state === 'function');
     check('panel provides the session surface', typeof sessions?.state === 'function');
@@ -246,7 +266,17 @@ async function main() {
     const third = await runtime.state('check-agui', second.cursor);
     check('runtime reports new events after a prompt', third.events.length > 0, `${third.events.length} events`);
 
-    // 6. Releasing a session frees it: the panel's transcript is gone.
+    // 6. Disabling the runtime is a stated state, not a crash.
+    disposeOrchestrator();
+    check('orchestrator drops its service on unload', !services.has('agent.runtime'));
+    const degraded = await sessions.state('check-agui').catch(error => ({ error: String(error) }));
+    check('panel reports a disabled runtime instead of throwing',
+        typeof degraded.error === 'string' && degraded.error.includes('Agent Orchestrator'),
+        String(degraded.error ?? '').slice(0, 90));
+    check('panel keeps its rendered transcript while the runtime is gone',
+        (degraded.entries ?? []).length > 0, `${(degraded.entries ?? []).length} entries kept`);
+
+    // 7. Releasing a session frees it: the panel's transcript is gone.
     await sessions.release('check-agui');
     const released = await sessions.summary('check-agui');
     check('release() drops the live session', released.live === false, JSON.stringify(released));
