@@ -7,3 +7,6 @@ lib
 
 dist
 .icebox
+
+# Scratch files from the head-less checks.
+.tmp-*

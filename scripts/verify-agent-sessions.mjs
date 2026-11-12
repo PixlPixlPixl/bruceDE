@@ -14,7 +14,7 @@
  */
 import { createServer } from 'node:http';
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,6 +22,8 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
 const ORCHESTRATOR = path.join(root, 'plugins', 'agent-orchestrator', 'dist', 'backend.js');
+/** Fake ACP agent: one process that can hold several sessions. */
+const ACP_STUB = path.join(root, 'scripts', 'fixtures', 'acp-stub.mjs');
 const PANEL_BACKEND = path.join(root, 'plugins', 'agent-chat', 'dist', 'backend.js');
 
 const failures = [];
@@ -120,6 +122,9 @@ function catalogue(aguiPort) {
             enabled: true,
             agents: [
                 slow,
+                // A real ACP agent over a fake process: `node <stub>` speaks the
+                // protocol, so repeated `session/new` can be exercised honestly.
+                { id: 'acp-stub', name: 'ACP stub', protocol: 'acp', command: process.execPath, args: [ACP_STUB] },
                 { id: 'stub', name: 'Stub', protocol: 'acp', agui: `http://127.0.0.1:${aguiPort}/run` },
                 { id: 'stub-with-cli', name: 'Stub with CLI', protocol: 'pi-rpc', command: 'pi', agui: 'http://127.0.0.1:9/run' }
             ]
@@ -330,7 +335,73 @@ async function main() {
     const stale = await runtime.waitForChange('check-stop', quiet - 1, 5000);
     check('waitForChange answers immediately when already behind', stale >= quiet, String(stale));
 
-    // 7. The runtime's cursor is incremental: no resend, no lost event.
+    // 7. Two chats on one ACP agent share one process.
+    const pidFile = path.join(root, '.tmp-acp-pids');
+    try {
+        rmSync(pidFile, { force: true });
+    } catch {
+        // Nothing to clear.
+    }
+    process.env.CHECK_PID_FILE = pidFile;
+    const pids = () => (existsSync(pidFile)
+        ? readFileSync(pidFile, 'utf8').split('\n').filter(Boolean)
+        : []);
+    if (!existsSync(ACP_STUB)) {
+        console.log(`  skip  ACP sharing (${path.relative(root, ACP_STUB)} is missing)`);
+    } else {
+        await sessions.openSession('check-acp-1', 'acp-stub');
+        await waitIdle(sessions, 'check-acp-1', 10_000);
+        await sessions.openSession('check-acp-2', 'acp-stub');
+        await waitIdle(sessions, 'check-acp-2', 10_000);
+        check('two ACP chats start one process', pids().length === 1, `${pids().length} process(es): ${pids().join(', ')}`);
+        const first = await runtime.state('check-acp-1');
+        const second = await runtime.state('check-acp-2');
+        check('each ACP chat gets its own agent session',
+            first.resume?.sessionId !== second.resume?.sessionId,
+            `${first.resume?.sessionId} / ${second.resume?.sessionId}`);
+        check('both ACP chats are live', first.status === 'idle' && second.status === 'idle',
+            `${first.status} / ${second.status}`);
+
+        await sessions.send('check-acp-1', 'one');
+        const answeredFirst = await waitFor(sessions, 'check-acp-1', state =>
+            text(state).includes('echo one'), 10_000);
+        await sessions.send('check-acp-2', 'two');
+        const answeredSecond = await waitFor(sessions, 'check-acp-2', state =>
+            text(state).includes('echo two'), 10_000);
+        check('shared process answers each chat separately',
+            text(answeredFirst).includes('echo one') && !text(answeredFirst).includes('echo two')
+            && text(answeredSecond).includes('echo two') && !text(answeredSecond).includes('echo one'),
+            `${text(answeredFirst).slice(-60)} | ${text(answeredSecond).slice(-60)}`);
+        check('commands are routed per session',
+            (answeredFirst?.commands ?? []).length > 0 && (answeredSecond?.commands ?? []).length > 0,
+            `${(answeredFirst?.commands ?? []).length} / ${(answeredSecond?.commands ?? []).length}`);
+
+        // Closing one chat must not close the other's process.
+        await sessions.release('check-acp-1');
+        const survivor = await runtime.state('check-acp-2');
+        await sessions.send('check-acp-2', 'still here');
+        const afterRelease = await waitFor(sessions, 'check-acp-2', state =>
+            text(state).includes('echo still here'), 10_000);
+        check('releasing one chat leaves the shared process alive',
+            text(afterRelease).includes('echo still here'), text(afterRelease).slice(-60));
+        check('the surviving chat keeps its own session', survivor.resume?.sessionId === second.resume?.sessionId,
+            `${survivor.resume?.sessionId}`);
+
+        // The last one out turns the lights off.
+        const survivorPid = Number(pids().at(-1));
+        await sessions.release('check-acp-2');
+        await new Promise(resolve => setTimeout(resolve, 300));
+        let processGone = false;
+        try {
+            process.kill(survivorPid, 0);
+        } catch {
+            processGone = true;
+        }
+        check('the last chat closes the shared process', processGone, `pid ${survivorPid} ${processGone ? 'gone' : 'alive'}`);
+    }
+    delete process.env.CHECK_PID_FILE;
+
+    // 8. The runtime's cursor is incremental: no resend, no lost event.
     const first = await runtime.state('check-agui');
     const second = await runtime.state('check-agui', first.cursor);
     check('runtime state returns events after a cursor only', second.events.length === 0,
@@ -340,7 +411,7 @@ async function main() {
     const third = await runtime.state('check-agui', second.cursor);
     check('runtime reports new events after a prompt', third.events.length > 0, `${third.events.length} events`);
 
-    // 6. Disabling the runtime is a stated state, not a crash.
+    // 9. Disabling the runtime is a stated state, not a crash.
     disposeOrchestrator();
     check('orchestrator drops its service on unload', !services.has('agent.runtime'));
     const degraded = await sessions.state('check-agui').catch(error => ({ error: String(error) }));
@@ -350,7 +421,7 @@ async function main() {
     check('panel keeps its rendered transcript while the runtime is gone',
         (degraded.entries ?? []).length > 0, `${(degraded.entries ?? []).length} entries kept`);
 
-    // 7. Releasing a session frees it: the panel's transcript is gone.
+    // 10. Releasing a session frees it: the panel's transcript is gone.
     await sessions.release('check-agui');
     const released = await sessions.summary('check-agui');
     check('release() drops the live session', released.live === false, JSON.stringify(released));

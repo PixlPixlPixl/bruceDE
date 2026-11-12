@@ -245,6 +245,13 @@ interface LiveSession {
     /** ISO timestamp of the last state change, for the session summary. */
     updatedAt: string;
     /**
+     * True when this chat shares its agent process with another chat.
+     *
+     * Set by the ACP driver: `session/new` on a live process costs a request, and
+     * a project list is a better place to show "shared" than a hidden refcount.
+     */
+    linkShared?: boolean;
+    /**
      * Bumped by `touch()`, so every state change is observable even when it emits
      * no event. `waitForChange` waits on this; the event cursor cannot serve,
      * because a status flip appends nothing to the log.
@@ -868,6 +875,146 @@ export function activate(api: BackendPluginAPI): void {
         };
     }
 
+    /**
+     * One ACP agent process, which several chat sessions can share.
+     *
+     * ACP addresses every call by session id and allows `session/new` again on
+     * the same connection, so a second chat on the same agent costs a request
+     * instead of a process. Everything the connection reports is routed back by
+     * session id, which is what makes the sharing safe: no chat sees another's
+     * turns, commands or usage.
+     */
+    interface AcpHost {
+        readonly key: string;
+        readonly agent: AgentDescriptor;
+        readonly connection: AcpConnection;
+        readonly client: AcpClient;
+        /** Whether `initialize` advertised `session/load`. */
+        readonly supportsLoad: boolean;
+        /** Sessions bound to this process, by the agent's own session id. */
+        readonly routes: Map<string, AcpRoute>;
+        /**
+         * Routes whose `session/new` has not returned yet.
+         *
+         * An agent may announce commands, or replay history during `session/load`,
+         * before the id is known — so a notification is matched by id first and
+         * falls back to the single opening route. Two chats opening at once is
+         * ambiguous by nature, and is left unrouted rather than delivered to the
+         * wrong chat.
+         */
+        readonly opening: AcpRoute[];
+        /** How many chat sessions are holding this process open. */
+        refs: number;
+        alive: boolean;
+    }
+
+    interface AcpRoute {
+        readonly session: LiveSession;
+        /** Usage and command lists are per session, so they are stored per route. */
+        setUsage(usage: AgentUsageInfo | undefined): void;
+        setCommands(commands: readonly AgentCommand[]): void;
+    }
+
+    const acpHosts = new Map<string, AcpHost>();
+
+    /**
+     * Which process a session may share.
+     *
+     * Keyed by agent and working folder, because the folder is fixed when the
+     * process starts. Pi never reaches here: its RPC commands carry no session
+     * parameter and `new_session` replaces the one conversation a process holds,
+     * so it always gets a process of its own. AG-UI has no process at all.
+     */
+    const acpKey = (agent: AgentDescriptor, workingDirectory: string): string =>
+        `acp:${agent.id}:${workingDirectory}`;
+
+    /** The live process for this agent and folder, or a freshly started one. */
+    async function acquireAcpHost(
+        session: LiveSession,
+        agent: AgentDescriptor,
+        workingDirectory: string
+    ): Promise<AcpHost> {
+        const key = acpKey(agent, workingDirectory);
+        const existing = acpHosts.get(key);
+        if (existing?.alive) {
+            existing.refs += 1;
+            session.linkShared = true;
+            return existing;
+        }
+
+        // Built in two steps: the connection's handlers need the host they belong
+        // to, and the host needs the connection to exist.
+        let host: AcpHost;
+        const routes = new Map<string, AcpRoute>();
+        const opening: AcpRoute[] = [];
+        const connection = new AcpConnection(agent.command, agent.args, workingDirectory, {
+            notification: (method, params) => {
+                if (method !== 'session/update') {
+                    return;
+                }
+                const byId = typeof params.sessionId === 'string' ? routes.get(params.sessionId) : undefined;
+                // Before `session/new` answers, the only chat that can be speaking
+                 // is the one opening it.
+                const target = byId ?? (opening.length === 1 ? opening[0] : undefined);
+                if (!target) {
+                    return;
+                }
+                const update = params.update as Record<string, unknown> | undefined;
+                if (update?.sessionUpdate === 'available_commands_update') {
+                    target.setCommands(parseAcpCommands(update));
+                    return;
+                }
+                appendAcpUpdate(target.session, params);
+            },
+            request: async (method, params) => requestFromAgent(method, params),
+            exit: reason => {
+                // One process, several chats: an exit belongs to all of them.
+                host.alive = false;
+                acpHosts.delete(host.key);
+                const bound = [...host.routes.values()];
+                host.routes.clear();
+                for (const route of bound) {
+                    handleExit(route.session, reason);
+                }
+            }
+        });
+        const client = new AcpClient(connection);
+        const initialized = await client.initialize();
+        if (initialized.authMethods && initialized.authMethods.length > 0) {
+            connection.dispose();
+            const methods = initialized.authMethods.map(method => method.name ?? method.id).join(', ');
+            throw new Error(
+                `"${agent.name}" requires authentication (${methods}). `
+                + 'Log in with that agent CLI first, then reopen this chat.'
+            );
+        }
+        host = {
+            key,
+            agent,
+            connection,
+            client,
+            supportsLoad: isLoadSessionSupported(initialized.agentCapabilities),
+            routes,
+            opening,
+            refs: 1,
+            alive: true
+        };
+        acpHosts.set(key, host);
+        return host;
+    }
+
+    /** Drops one chat's claim; the process dies with the last one. */
+    function releaseAcpHost(host: AcpHost, session: LiveSession): void {
+        host.refs -= 1;
+        session.linkShared = false;
+        if (host.refs > 0) {
+            return;
+        }
+        acpHosts.delete(host.key);
+        host.alive = false;
+        host.connection.dispose();
+    }
+
     async function startAcp(
         session: LiveSession,
         agent: AgentDescriptor,
@@ -877,35 +1024,26 @@ export function activate(api: BackendPluginAPI): void {
         let modelState: AgentModelState | undefined;
         let commands: AgentCommand[] = [];
         let lastUsage: AgentUsageInfo | undefined;
-        let client: AcpClient | undefined;
-        const connection = new AcpConnection(agent.command, agent.args, workingDirectory, {
-            notification: (method, params) => {
-                if (method === 'session/update') {
-                    const update = params.update as Record<string, unknown> | undefined;
-                    if (update?.sessionUpdate === 'available_commands_update') {
-                        commands = parseAcpCommands(update);
-                        session.commands = commands;
-                        return;
-                    }
-                    appendAcpUpdate(session, params);
-                }
-            },
-            request: async (method, params) => requestFromAgent(method, params),
-            exit: reason => handleExit(session, reason)
-        });
-        client = new AcpClient(connection);
-        const initialized = await client.initialize();
-        if (initialized.authMethods && initialized.authMethods.length > 0) {
-            const methods = initialized.authMethods.map(method => method.name ?? method.id).join(', ');
-            connection.dispose();
-            throw new Error(
-                `"${agent.name}" requires authentication (${methods}). `
-                + 'Log in with that agent CLI first, then reopen this chat.'
-            );
-        }
+        const host = await acquireAcpHost(session, agent, workingDirectory);
+        const client = host.client;
+        const connection = host.connection;
+
         const resume = session.resume;
-        const supportsLoad = isLoadSessionSupported(initialized.agentCapabilities);
+        const supportsLoad = host.supportsLoad;
+        const route: AcpRoute = {
+            session,
+            setUsage: usage => {
+                lastUsage = usage;
+            },
+            setCommands: next => {
+                commands = [...next];
+                session.commands = commands;
+            }
+        };
         if (resume && supportsLoad) {
+            // Registered before the request: `session/load` replays the earlier
+            // conversation through notifications while the call is outstanding.
+            host.routes.set(resume.sessionId, route);
             // Native resume: the agent replays the conversation through
             // `session/update` notifications, so the transcript is rebuilt from
             // the same events a live turn produces.
@@ -935,7 +1073,20 @@ export function activate(api: BackendPluginAPI): void {
                     text: `"${agent.name}" cannot restore an earlier session; started a new one.`
                 });
             }
-            const created = await client.newSession(workingDirectory);
+            // The id is not known until the answer, so this route is matched by
+            // being the only one opening.
+            host.opening.push(route);
+            let created;
+            try {
+                created = await client.newSession(workingDirectory);
+            } finally {
+                // Either way the open is over: a route must not stay "pending" and
+                // silently receive another chat's notifications.
+                const index = host.opening.indexOf(route);
+                if (index >= 0) {
+                    host.opening.splice(index, 1);
+                }
+            }
             sessionId = created.sessionId;
             session.resume = { agentId: agent.id, protocol: 'acp', sessionId };
             if (created.models?.availableModels?.length) {
@@ -950,6 +1101,21 @@ export function activate(api: BackendPluginAPI): void {
                     .filter((info): info is AgentModelInfo => info !== undefined);
             }
         }
+        const ownId = sessionId;
+        if (ownId) {
+            host.routes.set(ownId, route);
+        }
+        // Detach this chat's route without touching the process: another chat may
+        // still be using it.
+        const forgetRoute = (): void => {
+            if (ownId) {
+                host.routes.delete(ownId);
+            }
+            const pending = host.opening.indexOf(route);
+            if (pending >= 0) {
+                host.opening.splice(pending, 1);
+            }
+        };
         touch(session);
         const live = client;
         return {
@@ -968,7 +1134,12 @@ export function activate(api: BackendPluginAPI): void {
                     live.cancel(sessionId);
                 }
             },
-            dispose: () => connection.dispose(),
+            dispose: () => {
+                // A lane of the process, not the process itself: releasing a chat
+                // releases its claim, and the last claim kills the child.
+                forgetRoute();
+                releaseAcpHost(host, session);
+            },
             capabilities: { shell: false, midTurn: 'queue', interrupt: true },
             introspect: {
                 refreshModels: async () => modelState,

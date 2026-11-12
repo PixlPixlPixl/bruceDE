@@ -108,7 +108,15 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   normalises all of them into one vocabulary: AG-UI events, emitted in process
   (`TEXT_MESSAGE_*`, `TOOL_CALL_RESULT`, `CUSTOM`, `STATE_*`). It provides
   `agent.runtime`, whose `state(sessionId, since?)` returns only events after a
-  caller's cursor — an incremental read, not a transcript resend. A panel does not
+  caller's cursor — an incremental read, not a transcript resend.
+
+  A chat costs a request, not a process, when the protocol allows it: ACP
+  addresses every call by session id and accepts `session/new` again on a live
+  connection, so a second tab on the same agent and folder shares the process
+  (its commands, turns and usage are routed by session id, and it is released
+  when the last chat closes). Pi cannot share — its RPC commands carry no session
+  parameter and `new_session` replaces the one conversation a process holds — so
+  it always gets a process of its own. A panel does not
   ask on a timer at all: `waitForChange(sessionId, revision)` stays pending on the
   backend and answers the moment the session's revision moves, so one change costs
   one read. Capabilities
