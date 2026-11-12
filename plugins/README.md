@@ -102,6 +102,18 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   Untracked and binary files show no counts rather than a fabricated zero.
   The header box is the same `6px 10px` as the other plugin panels, so the
   separator line matches when the panels sit side by side.
+- **Agent Orchestrator** (`icebox.agent-orchestrator`) — the only plugin that
+  spawns an agent process or holds a resume handle. It adapts ACP (JSON-RPC over
+  stdio), Pi's own RPC mode and AG-UI (HTTP + SSE for agents that are servers) and
+  normalises all of them into one vocabulary: AG-UI events, emitted in process
+  (`TEXT_MESSAGE_*`, `TOOL_CALL_RESULT`, `CUSTOM`, `STATE_*`). It provides
+  `agent.runtime`, whose `state(sessionId, since?)` returns only events after a
+  caller's cursor — an incremental poll, not a transcript resend. Capabilities
+  (models, thinking levels, usage, commands, shell) stay on the service surface,
+  because the protocol that has none of them must not be able to hide the ones
+  that do. A chat panel therefore contains no protocol code: it folds events and
+  renders them, so a second panel needs no ACP/Pi implementation of its own.
+  Design notes and the remaining work: [../docs/agent-runtime.md](../docs/agent-runtime.md).
 - **Agent plugins** (`icebox.agent-pi`, `icebox.agent-gemini`,
   `icebox.agent-claude-code`, `icebox.agent-opencode`, plus anything a user drops
   in) — data only: a `plugin.json` whose `contributes.agents` names one agent CLI.
@@ -109,8 +121,10 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   build step and no entrypoints. Agent Chat turns them into picker entries,
   enabled-or-not exactly as the plugin manager says. This is the pattern for
   "add an agent without touching the app": see the Agent Chat section below.
-- **Agent Chat** (`icebox.agent-chat`) — backend half drives an installed agent
-  CLI and provides `agent.sessions`. Three wire protocols are supported, because
+- **Agent Chat** (`icebox.agent-chat`) — the panel. Its backend half is a facade
+  over the agent runtime (see **Agent Orchestrator** below): it provides
+  `agent.sessions` by folding runtime events into transcript rows, so the panel
+  holds the conversation product, not the protocols. Three wire protocols are supported, because
   the ecosystem is not uniform, and **AG-UI is the primary one**:
   - `agui` — the AG-UI protocol: one HTTP `POST` of a `RunAgentInput` per turn,
     whose response is a Server-Sent Events stream of typed events
