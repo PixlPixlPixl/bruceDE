@@ -8,7 +8,7 @@ import type {
     AgentStatus,
     BackendPluginAPI
 } from '@icebox/plugin-api';
-import { WORKSPACE_EVENT_IDS, WORKSPACE_SERVICE_IDS, isAgentProtocol } from '@icebox/plugin-api';
+import { WORKSPACE_EVENT_IDS, WORKSPACE_SERVICE_IDS } from '@icebox/plugin-api';
 import type {
     AgentSessionsView,
     ProjectRecord,
@@ -489,9 +489,10 @@ function readHandle(value: unknown): ProjectSessionRecord['resume'] {
     const agentId = readString(record.agentId);
     const sessionId = readString(record.sessionId);
     const protocol = record.protocol;
-    // Validated through the API's own predicate: a protocol this build does not
-    // know is still a handle worth keeping, never a reason to drop the record.
-    if (!agentId || !sessionId || !isAgentProtocol(protocol)) {
+    // Opaque and never interpreted: a protocol a plugin supplied is not in this
+    // build's vocabulary, and dropping the record would lose the session's
+    // resume handle — the one thing a project list exists to keep.
+    if (!agentId || !sessionId || typeof protocol !== 'string' || protocol.trim().length === 0) {
         return undefined;
     }
     const sessionFile = readString(record.sessionFile);

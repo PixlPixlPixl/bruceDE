@@ -113,7 +113,11 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   because the protocol that has none of them must not be able to hide the ones
   that do. A chat panel therefore contains no protocol code: it folds events and
   renders them, so a second panel needs no ACP/Pi implementation of its own.
-  Design notes and the remaining work: [../docs/agent-runtime.md](../docs/agent-runtime.md).
+  A protocol id in a stored resume handle is opaque: a plugin may supply one this
+  build does not name, so consumers keep it and hand it back unchanged rather than
+  validating it against the known three. Disabling the plugin disposes every live
+  connection it owns — a driver holds child processes, and Cordis only tears down
+  fibers.
 - **Agent plugins** (`icebox.agent-pi`, `icebox.agent-gemini`,
   `icebox.agent-claude-code`, `icebox.agent-opencode`, plus anything a user drops
   in) — data only: a `plugin.json` whose `contributes.agents` names one agent CLI.

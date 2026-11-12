@@ -205,6 +205,15 @@ export function isAgentProtocol(value: unknown): value is AgentProtocol {
     return value === 'agui' || value === 'acp' || value === 'pi-rpc';
 }
 
+/**
+ * An protocol id: one this build names, or one a plugin supplied.
+ *
+ * `(string & {})` keeps editor autocompletion for the known ids while accepting
+ * opaque ones, which is the difference between "a plugin cannot add protocols"
+ * and "a stored handle from a plugin protocol survives".
+ */
+export type AgentProtocolId = AgentProtocol | (string & {});
+
 /** Liveness of one agent session. */
 export type AgentStatus = 'idle' | 'starting' | 'running' | 'error';
 
@@ -251,7 +260,15 @@ export interface AgentDescriptor {
  */
 export interface AgentSessionHandle {
     readonly agentId: string;
-    readonly protocol: AgentProtocol;
+    /**
+     * Protocol that owns this handle.
+     *
+     * Known ids stay autocompleted, but any non-empty id is accepted: protocols
+     * can be supplied by plugins, and a consumer storing a handle must keep one it
+     * does not recognise instead of dropping the session (which is what breaks
+     * resume). Never interpret it — hand it back unchanged.
+     */
+    readonly protocol: AgentProtocolId;
     /** The session id the agent itself uses. */
     readonly sessionId: string;
     /** Pi persists a session as a JSONL file; resuming by path works from any directory. */

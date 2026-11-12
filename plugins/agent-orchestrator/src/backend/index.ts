@@ -533,6 +533,16 @@ export function activate(api: BackendPluginAPI): void {
 
     api.services.provide(WORKSPACE_SERVICE_IDS.agentRuntime, service);
 
+    // A driver owns child processes, and Cordis disposes the fiber, not raw Node
+    // handles: without this, disabling the plugin in the manager would leave
+    // `pi`/`gemini` children running with no panel able to reach them.
+    api.onDispose(() => {
+        for (const session of sessions.values()) {
+            session.link?.dispose();
+        }
+        sessions.clear();
+    });
+
     // Native handles are invisible to Cordis; the plugin must release them itself.
     api.onDispose(() => {
         for (const session of sessions.values()) {
