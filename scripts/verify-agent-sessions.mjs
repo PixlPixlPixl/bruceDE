@@ -14,7 +14,7 @@
  */
 import { createServer } from 'node:http';
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,14 +28,81 @@ const PANEL_BACKEND = path.join(root, 'plugins', 'agent-chat', 'dist', 'backend.
 
 const failures = [];
 let checks = 0;
+/** Every line of the run, kept for the CI summary as well as the console. */
+const report = [];
+
+/** True when this is running inside GitHub Actions. */
+const inActions = process.env.GITHUB_ACTIONS === 'true';
+
+function log(line) {
+    report.push(line);
+    console.log(line);
+}
 
 function check(name, condition, detail) {
     checks++;
+    const outcome = `${name}${detail ? ` — ${detail}` : ''}`;
     if (condition) {
-        console.log(`  ok    ${name}`);
+        log(`  ok    ${name}`);
     } else {
-        failures.push(`${name}${detail ? ` — ${detail}` : ''}`);
-        console.log(`  FAIL  ${name}${detail ? ` — ${detail}` : ''}`);
+        failures.push(outcome);
+        log(`  FAIL  ${name}${detail ? ` — ${detail}` : ''}`);
+        // An annotation surfaces the failing check on the pull request instead of
+        // leaving it buried in a log nobody opens.
+        if (inActions) {
+            console.log(`::error title=${escapeAnnotation(name)}::${escapeAnnotation(outcome)}`);
+        }
+    }
+}
+
+/**
+ * GitHub annotations are single-line `key=value` commands.
+ *
+ * A raw newline or percent sign in a detail string would break the command and
+ * silently drop the annotation, so both are escaped.
+ */
+function escapeAnnotation(value) {
+    return String(value)
+        .replace(/%/g, '%25')
+        .replace(/\r/g, '%0D')
+        .replace(/\n/g, '%0A')
+        .replace(/:/g, '%3A')
+        .replace(/,/g, '%2C');
+}
+
+/** Escapes the characters that would end a Markdown table cell. */
+function escapeCell(value) {
+    let escaped = String(value);
+    escaped = escaped.split('|').join('\\|');
+    escaped = escaped.split('\n').join(' ');
+    return escaped;
+}
+
+/** Writes the run to the job summary, which is the page a reviewer actually reads. */
+function publishSummary() {
+    const target = process.env.GITHUB_STEP_SUMMARY;
+    if (!target) {
+        return;
+    }
+    const lines = [
+        `## Agent session check`,
+        '',
+        `**${checks - failures.length} of ${checks}** passed.`,
+        '',
+        '| Result | Check |',
+        '| --- | --- |'
+    ];
+    for (const line of report) {
+        const match = /^  (ok    |FAIL  )(.*)$/.exec(line);
+        if (!match) {
+            continue;
+        }
+        lines.push(`| ${match[1].trim()} | ${escapeCell(match[2])} |`);
+    }
+    try {
+        appendFileSync(target, `${lines.join('\n')}\n`);
+    } catch {
+        // A summary is a convenience: never fail the run for it.
     }
 }
 
@@ -264,14 +331,14 @@ async function main() {
             // A provider outage is the agent's problem, not this backend's: the
             // check is structural (does the session become live and resumable?),
             // so a broken provider is reported as skipped rather than failed.
-            console.log(`  skip  CLI session (agent reported: ${afterPi.error})`);
+            log(`  skip  CLI session (agent reported: ${afterPi.error})`);
         } else {
             check('CLI session produces an agent entry', text(afterPi).includes('agent:'), text(afterPi).slice(0, 200));
             check('CLI session exposes a native resume handle', Boolean(afterPi?.resume?.sessionId),
                 JSON.stringify(afterPi?.resume));
         }
     } else {
-        console.log('  skip  CLI session (pi is not installed)');
+        log('  skip  CLI session (pi is not installed)');
     }
 
     // 5. A running turn can be stopped, and stopping it is not closing the session.
@@ -347,7 +414,7 @@ async function main() {
         ? readFileSync(pidFile, 'utf8').split('\n').filter(Boolean)
         : []);
     if (!existsSync(ACP_STUB)) {
-        console.log(`  skip  ACP sharing (${path.relative(root, ACP_STUB)} is missing)`);
+        log(`  skip  ACP sharing (${path.relative(root, ACP_STUB)} is missing)`);
     } else {
         await sessions.openSession('check-acp-1', 'acp-stub');
         await waitIdle(sessions, 'check-acp-1', 10_000);
@@ -429,13 +496,18 @@ async function main() {
     stub.server.close();
     console.log('');
     if (failures.length > 0) {
-        console.error(`${failures.length} of ${checks} check(s) failed:`);
-        for (const failure of failures) {
-            console.error(`  - ${failure}`);
+        const message = `${failures.length} of ${checks} check(s) failed`;
+        log(message);
+        publishSummary();
+        // The per-check annotations already name what broke; this one is the
+        // headline the run shows in its status.
+        if (inActions) {
+            console.log(`::error title=Agent session check::${escapeAnnotation(message)}`);
         }
         process.exit(1);
     }
-    console.log(`${checks} check(s) passed.`);
+    log(`${checks} check(s) passed.`);
+    publishSummary();
     // Child agents are killed by release(); anything left would keep Node alive.
     process.exit(0);
 }
