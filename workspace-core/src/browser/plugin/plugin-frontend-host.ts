@@ -39,9 +39,13 @@ export class PluginFrontendHost {
         this.kernel = new PluginKernel(options);
         this.manager = new CordisPluginManager<FrontendPluginAPI>({
             onError: (manifest, error) => {
-                this.options.onError?.(manifest.id, error);
-                // eslint-disable-next-line no-console
-                console.error(`[plugin-host] Frontend plugin "${manifest.id}" failed:`, error);
+                try {
+                    this.options.onError?.(manifest.id, error);
+                } catch (reportingError) {
+                    // A throwing error sink must not hide the original failure.
+                    // eslint-disable-next-line no-console
+                    console.error(`[plugin-host] Frontend plugin "${manifest.id}" failed:`, error, reportingError);
+                }
             }
         });
     }
@@ -63,7 +67,8 @@ export class PluginFrontendHost {
      * plugins without a frontend entrypoint.
      */
     async load(descriptor: PluginDescriptor, manifest: PluginManifest): Promise<PluginRuntimeRecord | undefined> {
-        if (!descriptor.frontendUrl) {
+        const frontendUrl = descriptor.frontendUrl;
+        if (!frontendUrl) {
             return undefined;
         }
         if (this.loadedIds.has(manifest.id)) {
@@ -74,7 +79,7 @@ export class PluginFrontendHost {
         const record = await this.manager.load<FrontendPluginAPI>({
             manifest,
             loadModule: async () => {
-                const source = await this.fetchBundle(manifest.id, descriptor.frontendUrl!);
+                const source = await this.fetchBundle(manifest.id, frontendUrl);
                 const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
                 try {
                     return await import(/* @vite-ignore */ url);
@@ -103,7 +108,8 @@ export class PluginFrontendHost {
     }
 
     async unloadAll(): Promise<void> {
-        for (const pluginId of Array.from(this.loadedIds)) {
+        // A copy, because unloading mutates `loadedIds` while iterating.
+        for (const pluginId of [...this.loadedIds]) {
             await this.unload(pluginId);
         }
     }
