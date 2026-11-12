@@ -36,6 +36,17 @@ jobs:
           node-version: 22
           cache: npm
 
+      # native-keymap (reached through @theia/electron) ships no prebuilds, so
+      # npm compiles it with node-gyp, whose binding.gyp asks pkg-config for
+      # x11 and xkbfile. The runner image has neither the libraries nor their
+      # .pc files, so the install stops before any check runs.
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev \
+            libxkbfile-dev
+
       # The root postinstall builds the workspace packages, so this also proves
       # that a fresh checkout compiles without a manual first step.
       - name: Install
