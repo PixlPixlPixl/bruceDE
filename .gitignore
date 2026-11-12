@@ -10,3 +10,6 @@ dist
 
 # Scratch files from the head-less checks.
 .tmp-*
+
+# Scanner exports: findings arrive as a report, never as repository content.
+/Semgrep_*.csv
