@@ -27,6 +27,13 @@ plugins/<plugin-id>/
   dist/backend.js           built ESM bundle (git-ignored)
 ```
 
+A plugin may also have **no entrypoints at all** when it contributes only
+manifest data (`contributes.agents`): the host reads `plugin.json` at discovery
+time and never imports code, so nothing needs to be built and no trust prompt is
+warranted for code that does not exist. `"entrypoints": {}` plus at least one
+contribution is the whole plugin — see `plugins/agent-pi/` (`plugin.json` and
+`package.json`, nothing else).
+
 `[!]` The bundler only detects `src/backend/index.ts` (not `.tsx`/`.mts`). Keep the
 backend entry at that exact path.
 
@@ -38,8 +45,12 @@ Scanned on start, in order: `$ICEBOX_PLUGINS_DIR` → `<appPath>/../plugins` →
 
 - Folders under `plugins/` in this repo are **built-in**: trusted by definition
   and **enabled by default**.
-- Folders under `~/.icebox/plugins` are **third-party**: disabled until the user
-  accepts the full-system-access warning in the plugin manager.
+- Folders reached through `$ICEBOX_PLUGINS_DIR` and `~/.icebox/plugins` are
+  **third-party**: disabled until the user accepts the warning in the plugin
+  manager. The override counts as third-party on purpose — it points at a folder
+  someone prepared, not at what this installation shipped.
+- The manager's **Refresh** button re-reads the folders, so a plugin added or
+  deleted while the app runs appears or disappears without a restart.
 - Problems never block startup. They surface as diagnostics in the plugin manager
   (`Open Plugin Manager`) and in the backend log with `[plugin-host]`
   prefixes. Check there first when a plugin does not appear.
@@ -273,6 +284,14 @@ It throws in backend code — backend plugins use `get` in-process.
 7. **Build real functionality.** No test-only, placeholder or demo plugins, and
    no demo panels dressed up as features; a scaffold must exercise the real
    contract and then be completed.
+7b. **Anything the user can configure is plugin data, not source.** An agent is a
+   descriptor, not a code path: declare it in `contributes.agents` so adding or
+   removing one is a folder drop or a manager toggle, and validate it in the
+   manifest rather than at first use. The pattern generalises — if a feature's
+   configuration is a fixed shape, it belongs in a manifest, and the consumer
+   reads it through a host service (agent chat reads `workspace.plugins`).
+   Do not compile a catalogue into a consumer's source: the user cannot disable,
+   extend or inspect it without editing code.
 8. **Theme with host variables.** The application defaults to the dark theme
    (`theia-dark`), so hardcoded colors break it. Style with
    `var(--theia-editor-background)`, `var(--theia-editor-foreground)`,

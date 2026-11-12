@@ -1,4 +1,9 @@
-import { ICEBOX_PLUGIN_API_VERSION, type PluginManifest } from '@icebox/plugin-api';
+import {
+    ICEBOX_PLUGIN_API_VERSION,
+    isAgentProtocol,
+    type PluginManifest,
+    type PluginManifestContributionAgents
+} from '@icebox/plugin-api';
 
 /** Pattern for a globally unique, namespaced plugin id, e.g. `icebox.terminal`. */
 export const PLUGIN_ID_PATTERN = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
@@ -106,6 +111,75 @@ function validateServices(value: unknown, context: string): string[] {
 }
 
 /**
+ * Agent declaration while it is being validated; the shipped type is readonly.
+ */
+type MutableAgent = {
+    id: string;
+    name: string;
+    protocol: PluginManifestContributionAgents['protocol'];
+    command?: string;
+    args?: readonly string[];
+    agui?: string;
+};
+
+/**
+ * Validates agent declarations, which are data rather than code.
+ *
+ * An entry needs something to talk to — a binary, an AG-UI endpoint, or both —
+ * and a protocol this host knows. Anything else is rejected here, so a bad
+ * manifest surfaces as a discovery diagnostic instead of as an agent that fails
+ * on its first prompt.
+ */
+function validateAgents(value: unknown, context: string): PluginManifestContributionAgents[] {
+    if (!Array.isArray(value)) {
+        throw new PluginManifestError(`"contributes.agents" must be an array (${context}).`);
+    }
+    const seen = new Set<string>();
+    return value.map((entry, index) => {
+        if (!isRecord(entry)) {
+            throw new PluginManifestError(`"contributes.agents[${index}]" must be an object (${context}).`);
+        }
+        const id = requireString(entry, 'id', context);
+        if (seen.has(id)) {
+            throw new PluginManifestError(`Duplicate contributed agent id "${id}" (${context}).`);
+        }
+        seen.add(id);
+        const protocol = requireString(entry, 'protocol', context);
+        if (!isAgentProtocol(protocol)) {
+            throw new PluginManifestError(
+                `"contributes.agents[${index}].protocol" must be "acp", "pi-rpc" or "agui" (got "${protocol}").`
+            );
+        }
+        const command = optionalString(entry, 'command', context);
+        const agui = optionalString(entry, 'agui', context);
+        if (!command && !agui) {
+            throw new PluginManifestError(
+                `"contributes.agents[${index}]" needs a "command" or an "agui" endpoint (${context}).`
+            );
+        }
+        const args = entry.args;
+        if (args !== undefined && (!Array.isArray(args) || args.some(arg => typeof arg !== 'string'))) {
+            throw new PluginManifestError(`"contributes.agents[${index}].args" must be an array of strings (${context}).`);
+        }
+        const agent: MutableAgent = {
+            id,
+            name: requireString(entry, 'name', context),
+            protocol
+        };
+        if (command) {
+            agent.command = command;
+        }
+        if (Array.isArray(args)) {
+            agent.args = [...args];
+        }
+        if (agui) {
+            agent.agui = agui;
+        }
+        return agent;
+    });
+}
+
+/**
  * Validates untrusted `plugin.json` content and returns a frozen manifest.
  *
  * This runs on the host before any plugin code is imported, so a malformed
@@ -144,6 +218,9 @@ export function validatePluginManifest(value: unknown, manifestPath?: string): P
         throw new PluginManifestError('"entrypoints" must be an object.', manifestPath);
     }
     const entrypoints: { frontend?: string; backend?: string } = {};
+    // Set when the manifest declares no code, which is allowed only for a plugin
+    // that contributes data (see the check after `contributes` is parsed).
+    let entrypointsDataOnly = false;
     if (value.entrypoints.frontend !== undefined) {
         if (typeof value.entrypoints.frontend !== 'string') {
             throw new PluginManifestError('"entrypoints.frontend" must be a string.', manifestPath);
@@ -157,10 +234,9 @@ export function validatePluginManifest(value: unknown, manifestPath?: string): P
         entrypoints.backend = validateEntrypointPath(value.entrypoints.backend, 'backend');
     }
     if (!entrypoints.frontend && !entrypoints.backend) {
-        throw new PluginManifestError(
-            'At least one of "entrypoints.frontend" or "entrypoints.backend" is required.',
-            manifestPath
-        );
+        // A data-only plugin is accepted below, once its contributions are known;
+        // the host reads such a manifest at discovery time and imports no code.
+        entrypointsDataOnly = true;
     }
 
     let dependencies: Record<string, string> | undefined;
@@ -204,6 +280,16 @@ export function validatePluginManifest(value: unknown, manifestPath?: string): P
                 context
             );
         }
+        if (value.contributes.agents !== undefined) {
+            (contributes as { agents?: unknown }).agents = validateAgents(value.contributes.agents, context);
+        }
+    }
+
+    if (entrypointsDataOnly && (contributes?.agents?.length ?? 0) === 0) {
+        throw new PluginManifestError(
+            'A plugin needs "entrypoints.frontend", "entrypoints.backend" or "contributes.agents".',
+            manifestPath
+        );
     }
 
     const manifest: PluginManifest = {

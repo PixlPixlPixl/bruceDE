@@ -1,0 +1,6 @@
+{
+  "name": "@icebox/plugin-agent-opencode",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agent descriptor for OpenCode; data only, no build step."
+}

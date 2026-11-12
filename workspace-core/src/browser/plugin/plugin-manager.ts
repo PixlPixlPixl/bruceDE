@@ -38,7 +38,8 @@ function toManifest(descriptor: PluginDescriptor): PluginManifest {
         contributes: {
             panels: descriptor.panels,
             commands: descriptor.commands,
-            services: descriptor.services
+            services: descriptor.services,
+            agents: descriptor.agents
         }
     };
 }
@@ -243,15 +244,35 @@ export class PluginManager implements FrontendApplicationContribution {
         }
     }
 
-    /** Full-system-access disclosure. Required before third-party plugins run. */
+    /**
+     * Full-system-access disclosure. Required before third-party plugins run.
+     *
+     * A plugin that only declares agents (`contributes.agents`) runs no code of
+     * its own, so the warning says what enabling it actually does: it lets Icebox
+     * start the agent commands that manifest names. Anything with an entrypoint
+     * keeps the code warning, because an entrypoint really can do all of it.
+     */
     protected async confirmFullSystemAccess(descriptor: PluginDescriptor): Promise<boolean> {
+        const dataOnly = descriptor.agents.length > 0
+            && !descriptor.frontendUrl
+            && !descriptor.backendEntrypoint;
+        const commands = descriptor.agents
+            .map(agent => agent.command)
+            .filter((command): command is string => typeof command === 'string');
         const dialog = new ConfirmDialog({
             title: nls.localize('icebox/pluginRuntime', 'Enable third-party plugin?'),
-            msg: nls.localize(
-                'icebox/pluginRuntime',
-                '"{0}" is third-party code. Icebox plugins run with the full privileges of this application: they can read and write files, run processes, and use the network. There is no sandbox. Only enable plugins you trust.',
-                `${descriptor.name} (${descriptor.id})`
-            ),
+            msg: dataOnly
+                ? nls.localize(
+                    'icebox/pluginRuntime',
+                    '"{0}" adds agents but contains no code of its own. Enabling it lets Icebox start the commands it declares ({1}) when you open a chat with those agents. Only enable plugins you trust.',
+                    `${descriptor.name} (${descriptor.id})`,
+                    commands.length > 0 ? commands.join(', ') : 'none'
+                )
+                : nls.localize(
+                    'icebox/pluginRuntime',
+                    '"{0}" is third-party code. Icebox plugins run with the full privileges of this application: they can read and write files, run processes, and use the network. There is no sandbox. Only enable plugins you trust.',
+                    `${descriptor.name} (${descriptor.id})`
+                ),
             ok: nls.localize('icebox/pluginRuntime', 'I understand, enable it'),
             cancel: nls.localize('icebox/pluginRuntime', 'Cancel')
         });

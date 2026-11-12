@@ -1,0 +1,6 @@
+{
+  "name": "@icebox/plugin-agent-gemini",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agent descriptor for Gemini CLI; data only, no build step."
+}

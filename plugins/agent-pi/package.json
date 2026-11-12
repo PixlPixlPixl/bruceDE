@@ -1,0 +1,6 @@
+{
+  "name": "@icebox/plugin-agent-pi",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agent descriptor for Pi; data only, no build step."
+}

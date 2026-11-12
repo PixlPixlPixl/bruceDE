@@ -27,6 +27,15 @@ export const WORKSPACE_SERVICE_IDS = {
     selection: 'workspace.selection',
     /** {@link WorkspaceDialogsService}: native host dialogs a plugin may request. */
     dialogs: 'workspace.dialogs',
+    /**
+     * {@link WorkspacePluginsService}: the catalogue of discovered plugins.
+     *
+     * Read-only and provided by the host on the backend side. A plugin that
+     * contributes manifest data (agents, for instance) has nothing to register,
+     * so the consumer needs a way to ask which plugins exist and what they
+     * declare.
+     */
+    plugins: 'workspace.plugins',
     /** Repository state provided by the Git plugin. */
     gitRepository: 'git.repository',
     /** Agent sessions provided by the agent-chat plugin. */
@@ -128,6 +137,35 @@ export interface WorkspaceDialogsService {
 }
 
 /**
+ * One discovered plugin, as another plugin sees it.
+ *
+ * Deliberately narrower than the manager's descriptor: no filesystem path and no
+ * entrypoint URLs, because a plugin consuming this only needs to know what other
+ * plugins declare. `enabled` is the user's persisted decision, so a consumer can
+ * ignore the contributions of a plugin that is switched off.
+ */
+export interface WorkspacePluginEntry {
+    readonly id: string;
+    readonly name: string;
+    readonly version: string;
+    /** True for plugins shipped with the installation. */
+    readonly builtIn: boolean;
+    readonly enabled: boolean;
+    readonly agents: readonly PluginManifestContributionAgents[];
+}
+
+/**
+ * Read-only catalogue of the plugins the host discovered.
+ *
+ * The counterpart of manifest-declared data: a plugin such as agent-chat lists
+ * agents, but the declarations live in other plugins' manifests, which no plugin
+ * can read on its own.
+ */
+export interface WorkspacePluginsService {
+    list(): readonly WorkspacePluginEntry[] | Promise<readonly WorkspacePluginEntry[]>;
+}
+
+/**
  * Wire protocol a chat session speaks.
  *
  * `agui` is the AG-UI protocol — one HTTP POST per turn answering with a stream
@@ -180,6 +218,14 @@ export interface AgentDescriptor {
      * agents that do not declare their own.
      */
     readonly agui?: string;
+    /**
+     * Plugin that declares this agent, when it came from one.
+     *
+     * Agents are plugin data (`contributes.agents`), so the panel can say where
+     * one came from and which plugin to disable to remove it. Absent for an
+     * agent configured through `ICEBOX_AGENTS`.
+     */
+    readonly pluginId?: string;
     /** False when the executable is not on `PATH`; shown as unavailable. */
     readonly available: boolean;
 }
@@ -286,6 +332,36 @@ export interface PluginManifestContributions {
     readonly commands?: readonly PluginManifestContributionCommands[];
     /** Service identifiers this plugin intends to provide. */
     readonly services?: readonly string[];
+    /**
+     * Agent CLIs this plugin makes available to agent chat.
+     *
+     * Declared as manifest data rather than registered by code, so a plugin that
+     * only adds agents needs no entrypoints at all: the host parses it at
+     * discovery time, and the agent-chat panel lists it through
+     * {@link WORKSPACE_SERVICE_IDS.plugins}. Disabling the plugin removes its
+     * agents from the picker with no code path to clean up.
+     */
+    readonly agents?: readonly PluginManifestContributionAgents[];
+}
+
+/**
+ * One agent a plugin declares.
+ *
+ * This is the same information as {@link AgentDescriptor} minus availability,
+ * which is a question about *this machine* (does the binary resolve? does the
+ * AG-UI endpoint answer?) rather than about the plugin.
+ */
+export interface PluginManifestContributionAgents {
+    /** Id the panel uses to address this agent, unique across enabled plugins. */
+    readonly id: string;
+    readonly name: string;
+    /** Protocol the agent's own CLI speaks; AG-UI is tried first when it has an endpoint. */
+    readonly protocol: AgentProtocol;
+    /** Executable name or path; omitted for an agent reachable only over AG-UI. */
+    readonly command?: string;
+    readonly args?: readonly string[];
+    /** HTTP endpoint of the agent's AG-UI server, when it has one. */
+    readonly agui?: string;
 }
 
 export interface PluginManifest {

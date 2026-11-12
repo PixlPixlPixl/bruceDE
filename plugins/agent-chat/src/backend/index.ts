@@ -5,7 +5,8 @@ import {
     AGENT_PROTOCOL_LABELS,
     WORKSPACE_EVENT_IDS,
     WORKSPACE_SERVICE_IDS,
-    isAgentProtocol
+    isAgentProtocol,
+    type WorkspacePluginsService
 } from '@icebox/plugin-api';
 import { AcpClient, AcpConnection, type AcpModelInfo, type AcpPromptUsage } from '../acp.js';
 import { AgUiConnection, agUiId, probeAgUi, type AgUiEvent, type AgUiMessage } from '../agui.js';
@@ -39,30 +40,32 @@ const SHELL_TIMEOUT_MS = 300_000;
 const MAX_ATTACHMENT_BYTES = 200_000;
 const MAX_ATTACHMENTS_BYTES = 400_000;
 
+/** How long a `PATH` answer is reused; the panel re-polls the list every second. */
+const AVAILABILITY_TTL_MS = 2_000;
+
 /**
- * Agent CLIs this plugin knows how to drive.
+ * Where the agents come from.
  *
- * Entries carry their availability: the picker shows installed agents in full
- * colour and the rest dimmed, so the user can see what this build supports
- * without being able to launch something that is not there. Any ACP agent can
- * also be added without a code change through `ICEBOX_AGENTS`.
+ * Agents are plugin data, not a list compiled into this panel: each one is
+ * declared by a plugin's manifest (`contributes.agents`), read through
+ * {@link WORKSPACE_SERVICE_IDS.plugins}. Adding an agent is therefore dropping a
+ * plugin folder in, and removing one is disabling (or deleting) that plugin — no
+ * source edit either way. `ICEBOX_AGENTS` remains as the escape hatch for an
+ * unlisted agent, and replaces the catalogue entirely when set, because an explicit
+ * configuration is the user's decision.
  *
  * Three protocols are supported, because the ecosystem is not uniform: AG-UI is
  * the panel's preferred interface, most agents speak ACP, and Pi speaks its own
  * RPC mode and has no ACP mode. Which one a session uses is decided at start: an
  * agent with an AG-UI endpoint is tried over AG-UI first, and its own protocol is
- * the fallback when the endpoint does not answer. The handshake is the real
- * availability check; `available` only reports whether a binary resolves, so a
- * changed flag surfaces as a protocol error in the transcript instead of a
- * silent failure.
+ * the fallback when the endpoint does not answer.
+ *
+ * Availability is a question about *this machine*, answered here: an agent with
+ * an AG-UI endpoint is available as soon as it is declared (the endpoint is probed
+ * at start), and a CLI agent is available when its binary resolves on `PATH`. The
+ * handshake is the real check either way, so a changed flag surfaces as a protocol
+ * error in the transcript instead of a silent failure.
  */
-const KNOWN_AGENTS: readonly AgentCandidate[] = [
-    { id: 'pi', name: 'Pi', protocol: 'pi-rpc', command: 'pi', args: ['--mode', 'rpc', '--no-session'] },
-    { id: 'gemini', name: 'Gemini CLI', protocol: 'acp', command: 'gemini', args: ['--experimental-acp'] },
-    { id: 'claude-code-acp', name: 'Claude Code (ACP)', protocol: 'acp', command: 'claude-code-acp', args: [] },
-    { id: 'opencode', name: 'OpenCode', protocol: 'acp', command: 'opencode', args: ['acp'] }
-];
-
 type AgentCandidate = Omit<AgentDescriptor, 'available'>;
 
 /** One model as Pi reports it (`get_state`, `get_available_models`). */
@@ -203,12 +206,15 @@ interface LiveSession {
  * child process is disposed when its session is released or the plugin unloads.
  */
 export function activate(api: BackendPluginAPI): void {
-    const agents = discoverAgents();
+    // Manifest-declared agents come from other plugins, which this plugin cannot
+    // read on its own; the host publishes them through `workspace.plugins`.
+    const catalogue = api.services.get<WorkspacePluginsService>(WORKSPACE_SERVICE_IDS.plugins);
+    const agents = (): Promise<AgentDescriptor[]> => discoverAgents(catalogue);
     const cwd = api.workspace.cwd;
     const sessions = new Map<string, LiveSession>();
 
-    const agentById = (agentId: string): AgentDescriptor => {
-        const agent = agents.find(candidate => candidate.id === agentId);
+    const agentById = async (agentId: string): Promise<AgentDescriptor> => {
+        const agent = (await agents()).find(candidate => candidate.id === agentId);
         if (!agent) {
             throw new Error(`Unknown agent "${agentId}".`);
         }
@@ -290,10 +296,10 @@ export function activate(api: BackendPluginAPI): void {
     };
 
     const service: AgentSessionsService = {
-        listAgents: () => agents,
+        listAgents: () => agents(),
 
         openSession: async (sessionId: string, agentId: string, options?: AgentSessionOptions) => {
-            const agent = agentById(agentId);
+            const agent = await agentById(agentId);
             const session = sessionFor(sessionId);
             // A handle for another agent would resume the wrong process; the
             // panel only ever passes the handle that belongs to its agent.
@@ -1464,26 +1470,48 @@ function pushEntry(session: LiveSession, entry: ChatEntry): void {
 }
 
 /**
- * Agents come from `ICEBOX_AGENTS` (authoritative; `ICEBOX_ACP_AGENTS` is
- * still accepted as its old name) or the known list.
- * The environment variable is a JSON array of
- * `{ id, name, command?, args?, protocol?, agui? }`; `agui` is the HTTP endpoint
- * of that agent's AG-UI server, and `command` may be omitted for an agent that
- * only exists behind AG-UI.
+ * The agents this install can chat with.
+ *
+ * Sources, in order: `ICEBOX_AGENTS` (also accepted under its old name
+ * `ICEBOX_ACP_AGENTS`), which is an explicit configuration and therefore replaces
+ * everything; otherwise every enabled plugin's `contributes.agents`. A declaration
+ * is untrusted data the host has already validated, so a bad protocol or a missing
+ * command never reaches here.
+ *
+ * Duplicate ids keep the first declaration in plugin-id order: two plugins
+ * claiming one id is a configuration mistake, and listing it twice would make the
+ * picker ambiguous. Which plugin owns an id is reported through
+ * {@link AgentDescriptor.pluginId}, so the user can see where it came from.
  */
-function discoverAgents(): AgentDescriptor[] {
+async function discoverAgents(catalogue: WorkspacePluginsService | undefined): Promise<AgentDescriptor[]> {
     const configured = readConfiguredAgents();
     if (configured) {
         // An explicit configuration is the user's decision: list every entry, so
         // a missing binary is reported instead of silently disappearing.
         return configured.map(candidate => toDescriptor(candidate));
     }
-    // Nothing configured: every supported agent is listed with its availability,
-    // so the picker can show installed agents first and the rest as unavailable.
-    return KNOWN_AGENTS.map(candidate => toDescriptor(candidate));
+    if (!catalogue) {
+        return [];
+    }
+    const plugins = await catalogue.list();
+    const seen = new Set<string>();
+    const descriptors: AgentDescriptor[] = [];
+    for (const plugin of plugins) {
+        if (!plugin.enabled) {
+            continue;
+        }
+        for (const agent of plugin.agents) {
+            if (seen.has(agent.id)) {
+                continue;
+            }
+            seen.add(agent.id);
+            descriptors.push(toDescriptor(agent, plugin.id));
+        }
+    }
+    return descriptors;
 }
 
-function toDescriptor(candidate: AgentCandidate): AgentDescriptor {
+function toDescriptor(candidate: AgentCandidate, pluginId?: string): AgentDescriptor {
     const agui = aguiEndpoint(candidate.agui);
     return {
         id: candidate.id,
@@ -1492,11 +1520,32 @@ function toDescriptor(candidate: AgentCandidate): AgentDescriptor {
         command: candidate.command,
         args: candidate.args ?? [],
         ...(agui ? { agui } : {}),
-        // "Available" means there is something to try: an AG-UI endpoint needs
-        // no binary at all, and an agent that has one can be reached even when
-        // its CLI is not installed (the endpoint may wrap another runtime).
-        available: agui !== undefined || executableExists(candidate.command)
+        ...(pluginId ? { pluginId } : {}),
+        // "Available" means there is something to try: an AG-UI endpoint needs no
+        // binary at all, and an agent that has one can be reached even when its CLI
+        // is not installed (the endpoint may wrap another runtime).
+        available: agui !== undefined || commandAvailable(candidate.command)
     };
+}
+
+/**
+ * Whether a CLI resolves on `PATH`, memoised for a moment.
+ *
+ * `accessSync` walks every `PATH` entry, and the panel re-reads the agent list on
+ * its poll so a plugin toggled in the manager shows up without reopening the tab.
+ * A couple of seconds is enough for that, and short enough to notice an install.
+ */
+const commandAvailability = new Map<string, { available: boolean; checkedAt: number }>();
+
+function commandAvailable(command: string): boolean {
+    const cached = commandAvailability.get(command);
+    const now = Date.now();
+    if (cached && now - cached.checkedAt < AVAILABILITY_TTL_MS) {
+        return cached.available;
+    }
+    const available = executableExists(command);
+    commandAvailability.set(command, { available, checkedAt: now });
+    return available;
 }
 
 /**

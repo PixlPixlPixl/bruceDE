@@ -55,7 +55,13 @@ export async function buildPlugin(pluginDir) {
     }
 
     if (built.length === 0) {
-        console.warn(`[plugin-build] ${manifest.id}: nothing to build (no src/frontend or src/backend entrypoint).`);
+        // Data-only plugins (`contributes.agents` and no entrypoints) are complete
+        // without a build; anything else that declares an entrypoint but ships no
+        // source is a mistake worth warning about.
+        const declaresCode = Boolean(manifest.entrypoints?.frontend || manifest.entrypoints?.backend);
+        if (declaresCode) {
+            console.warn(`[plugin-build] ${manifest.id}: nothing to build (no src/frontend or src/backend entrypoint).`);
+        }
     } else {
         console.log(`[plugin-build] ${manifest.id}: built ${built.join(', ')}`);
     }

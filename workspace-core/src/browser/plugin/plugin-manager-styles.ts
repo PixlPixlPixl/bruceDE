@@ -110,6 +110,14 @@ export const ACTIONS_STYLE: CSSProperties = {
     marginLeft: 'auto'
 };
 
+/** Heading and Refresh side by side: rescanning is an action, not a document. */
+export const HEADER_ROW_STYLE: CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '12px'
+};
+
 export const BUTTON_STYLE: CSSProperties = {
     minWidth: '84px',
     padding: '4px 12px',

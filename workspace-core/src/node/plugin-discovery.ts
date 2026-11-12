@@ -3,6 +3,7 @@ import * as path from 'path';
 import type { PluginManifest } from '@icebox/plugin-api';
 import { ICEBOX_WORKSPACE_PLUGIN_ID } from '@icebox/plugin-api';
 import { PluginManifestError, satisfiesVersion, validatePluginManifest } from '@icebox/plugin-runtime';
+import type { PluginRoot } from './plugin-paths.js';
 import {
     PLUGIN_ASSET_PREFIX,
     type PluginDescriptor,
@@ -13,6 +14,8 @@ export interface DiscoveredPlugin {
     readonly manifest: PluginManifest;
     /** Absolute plugin folder. */
     readonly directory: string;
+    /** True when the folder ships with the installation; see `PluginRoot`. */
+    readonly builtIn: boolean;
     readonly manifestPath: string;
     /** Absolute path of each declared entrypoint that exists on disk. */
     readonly frontendEntrypoint?: string;
@@ -34,7 +37,7 @@ const MANIFEST_FILE = 'plugin.json';
  * thrown: one broken third-party plugin must not prevent the workspace from
  * starting.
  */
-export async function discoverPlugins(roots: readonly string[]): Promise<DiscoveryResult> {
+export async function discoverPlugins(roots: readonly PluginRoot[]): Promise<DiscoveryResult> {
     const plugins: DiscoveredPlugin[] = [];
     const diagnostics: PluginDiagnostic[] = [];
     const seenIds = new Map<string, string>();
@@ -42,10 +45,10 @@ export async function discoverPlugins(roots: readonly string[]): Promise<Discove
     for (const root of roots) {
         let entries: string[];
         try {
-            entries = await fs.readdir(root);
+            entries = await fs.readdir(root.path);
         } catch (error) {
             diagnostics.push({
-                directory: root,
+                directory: root.path,
                 message: `Cannot read plugin root: ${describeError(error)}`
             });
             continue;
@@ -53,7 +56,7 @@ export async function discoverPlugins(roots: readonly string[]): Promise<Discove
 
         entries.sort();
         for (const entryName of entries) {
-            const directory = path.join(root, entryName);
+            const directory = path.join(root.path, entryName);
             let stats;
             try {
                 stats = await fs.stat(directory);
@@ -96,19 +99,13 @@ export async function discoverPlugins(roots: readonly string[]): Promise<Discove
             seenIds.set(manifest.id, directory);
 
             const entrypoints = await resolveEntrypoints(directory, manifest, diagnostics);
-            plugins.push({ manifest, directory, manifestPath, ...entrypoints });
+            plugins.push({ manifest, directory, builtIn: root.builtIn, manifestPath, ...entrypoints });
         }
     }
 
     void resolveCrossDependencies(plugins, diagnostics);
     plugins.sort((a, b) => a.manifest.id.localeCompare(b.manifest.id));
     return { plugins, diagnostics };
-}
-
-/** True when a plugin folder lives in the per-user plugin directory. */
-export function isUserPluginPath(directory: string): boolean {
-    const normalized = directory.replace(/\\/g, '/');
-    return normalized.includes('/.icebox/');
 }
 
 async function resolveEntrypoints(
@@ -201,7 +198,7 @@ export function toDescriptor(plugin: DiscoveredPlugin): PluginDescriptor {
         version: plugin.manifest.version,
         apiVersion: plugin.manifest.apiVersion,
         description: plugin.manifest.description,
-        builtIn: !isUserPluginPath(plugin.directory),
+        builtIn: plugin.builtIn,
         directory: plugin.directory,
         frontendUrl: plugin.frontendEntrypoint && frontendPath
             ? `${PLUGIN_ASSET_PREFIX}/${encodeURIComponent(plugin.manifest.id)}/${normalizeRelativePath(frontendPath)}`
@@ -217,7 +214,8 @@ export function toDescriptor(plugin: DiscoveredPlugin): PluginDescriptor {
             id: command.id,
             title: command.title
         })),
-        services: contributions?.services ?? []
+        services: contributions?.services ?? [],
+        agents: contributions?.agents ?? []
     };
 }
 

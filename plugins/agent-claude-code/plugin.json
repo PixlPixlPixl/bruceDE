@@ -1,0 +1,19 @@
+{
+    "id": "icebox.agent-claude-code",
+    "name": "Claude Code",
+    "version": "0.1.0",
+    "apiVersion": 1,
+    "description": "Declares the Claude Code agent CLI for agent chat. No code: the descriptor is manifest data.",
+    "entrypoints": {},
+    "contributes": {
+        "agents": [
+            {
+                "id": "claude-code-acp",
+                "name": "Claude Code (ACP)",
+                "protocol": "acp",
+                "command": "claude-code-acp",
+                "args": []
+            }
+        ]
+    }
+}

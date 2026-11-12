@@ -8,14 +8,20 @@ import {
 } from '@theia/core/lib/node/backend-application';
 import { ILogger } from '@theia/core/lib/common/logger';
 import {
+    ICEBOX_WORKSPACE_PLUGIN_ID,
+    WORKSPACE_SERVICE_IDS,
+    type WorkspacePluginEntry,
+    type WorkspacePluginsService
+} from '@icebox/plugin-api';
+import {
     HOST_MODULE_PREFIX,
     PLUGIN_ASSET_PREFIX,
     type PluginHostClient,
     type PluginHostSnapshot,
     type PluginDiagnostic
 } from '../common/plugin-host-protocol.js';
-import { discoverPlugins, isUserPluginPath, toDescriptor, type DiscoveredPlugin } from './plugin-discovery.js';
-import { resolvePluginRoots } from './plugin-paths.js';
+import { discoverPlugins, toDescriptor, type DiscoveredPlugin } from './plugin-discovery.js';
+import { resolvePluginRoots, type PluginRoot } from './plugin-paths.js';
 import { PluginStateStore } from './plugin-state-store.js';
 import { PluginBackendRuntime } from './plugin-backend-runtime.js';
 import type { PluginServiceRegistry } from '../common/plugin-registries.js';
@@ -43,7 +49,7 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
  */
 @injectable()
 export class PluginHostBackendService implements BackendApplicationContribution, PluginHostClient {
-    protected readonly roots: string[] = [];
+    protected readonly roots: PluginRoot[] = [];
     protected discovered: readonly DiscoveredPlugin[] = [];
     protected diagnostics: readonly PluginDiagnostic[] = [];
     protected readonly state = new PluginStateStore();
@@ -91,7 +97,37 @@ export class PluginHostBackendService implements BackendApplicationContribution,
         this.logger.info(
             `[plugin-host] Discovered ${this.discovered.length} plugin(s) in ${this.roots.length} root(s).`
         );
+        this.provideCatalogue();
         await this.activateEnabledBackendPlugins();
+    }
+
+    /**
+     * Publishes the plugin catalogue to backend plugins.
+     *
+     * Manifest-declared data (agents) belongs to plugins that may have no code at
+     * all, so the consumer cannot be handed it any other way: it asks this service
+     * which plugins exist and what they declare. Provided before any plugin
+     * activates, so a consumer never races its provider.
+     */
+    protected provideCatalogue(): void {
+        const service: WorkspacePluginsService = { list: () => this.catalogue() };
+        this.runtime.services.provide(
+            ICEBOX_WORKSPACE_PLUGIN_ID,
+            WORKSPACE_SERVICE_IDS.plugins,
+            service
+        );
+    }
+
+    /** One entry per discovered plugin, with the user's current enable decision. */
+    protected catalogue(): readonly WorkspacePluginEntry[] {
+        return this.discovered.map(plugin => ({
+            id: plugin.manifest.id,
+            name: plugin.manifest.name,
+            version: plugin.manifest.version,
+            builtIn: plugin.builtIn,
+            enabled: this.isEnabled(plugin),
+            agents: plugin.manifest.contributes?.agents ?? []
+        }));
     }
 
     configure(app: express.Application): void {
@@ -123,7 +159,16 @@ export class PluginHostBackendService implements BackendApplicationContribution,
 
     async refresh(): Promise<PluginHostSnapshot> {
         await this.ready;
+        const before = this.discovered.map(plugin => plugin.manifest.id);
         await this.rescan();
+        // A folder the user deleted must stop running, not linger until restart:
+        // unloading releases its fiber, services, events and its own disposers.
+        const known = new Set(this.discovered.map(plugin => plugin.manifest.id));
+        for (const id of before) {
+            if (!known.has(id)) {
+                await this.runtime.unload(id);
+            }
+        }
         await this.activateEnabledBackendPlugins();
         return this.snapshot();
     }
@@ -131,7 +176,7 @@ export class PluginHostBackendService implements BackendApplicationContribution,
     async setTrusted(pluginId: string, trusted: boolean): Promise<PluginHostSnapshot> {
         await this.ready;
         const plugin = this.requirePlugin(pluginId);
-        if (!isUserPluginPath(plugin.directory)) {
+        if (plugin.builtIn) {
             throw new Error(`Built-in plugin "${pluginId}" is trusted by definition.`);
         }
         this.state.setTrusted(pluginId, trusted);
@@ -183,7 +228,7 @@ export class PluginHostBackendService implements BackendApplicationContribution,
         if (override !== undefined) {
             return override;
         }
-        return !isUserPluginPath(plugin.directory);
+        return plugin.builtIn;
     }
 
     protected isTrusted(pluginId: string): boolean {
@@ -193,7 +238,7 @@ export class PluginHostBackendService implements BackendApplicationContribution,
         }
         // Built-in plugins ship with Icebox; only third-party code needs a
         // user decision.
-        return !isUserPluginPath(plugin.directory) || this.state.isTrusted(pluginId);
+        return plugin.builtIn || this.state.isTrusted(pluginId);
     }
 
     protected async rescan(): Promise<void> {

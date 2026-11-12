@@ -21,6 +21,15 @@ import type {
 const PANEL_CHAT = 'agent-chat.conversation';
 const COMMAND_OPEN = 'icebox.agent-chat.open';
 const POLL_INTERVAL_MS = 700;
+/**
+ * How often the agent list is re-read.
+ *
+ * It is plugin data, so it only changes when the user enables or disables a
+ * plugin in the manager; the panel does not need to notice within a second, and
+ * the backend answers from the host catalogue plus a short cache of `PATH`
+ * lookups.
+ */
+const AGENT_LIST_INTERVAL_MS = 4_000;
 /** Rows offered by one search before the user has narrowed it down. */
 const MODEL_ROWS = 40;
 /** Completion rows rendered at once; the rest is reached by typing. */
@@ -247,7 +256,10 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
 
     React.useEffect(() => {
         let cancelled = false;
-        void (async () => {
+        // The agent list is plugin data, so it changes when a plugin is enabled or
+        // disabled in the manager. Re-reading it on its own slow tick means the
+        // picker follows the plugin list without reopening the tab.
+        const refresh = async (): Promise<void> => {
             try {
                 const list = await sessions.listAgents();
                 if (!cancelled) {
@@ -258,9 +270,12 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
                     setError(cause instanceof Error ? cause.message : String(cause));
                 }
             }
-        })();
+        };
+        void refresh();
+        const timer = setInterval(() => void refresh(), AGENT_LIST_INTERVAL_MS);
         return () => {
             cancelled = true;
+            clearInterval(timer);
         };
     }, [sessions]);
 
@@ -1019,13 +1034,16 @@ function formatTokens(value: number | undefined): string {
     return String(Math.round(value));
 }
 
-/** Tooltip text for one agent: how it is launched and reached. */
+/** Tooltip text for one agent: how it is launched, reached, and where it came from. */
 function describeAgent(agent: AgentDescriptor): string {
     const launch = agent.command ? `${agent.command} ${agent.args.join(' ')}`.trim() : 'no CLI — AG-UI only';
     const protocols = agent.agui
         ? `AG-UI at ${agent.agui}, falling back to ${protocolLabel(agent.protocol)}`
         : protocolLabel(agent.protocol);
-    return `${launch} · ${protocols}`;
+    // Agents are plugin data, so naming the plugin says which one to disable to
+    // remove this agent; an env-configured agent has no plugin to point at.
+    const source = agent.pluginId ? `declared by ${agent.pluginId}` : 'set by ICEBOX_AGENTS';
+    return `${launch} · ${protocols}\n${source}`;
 }
 
 /**

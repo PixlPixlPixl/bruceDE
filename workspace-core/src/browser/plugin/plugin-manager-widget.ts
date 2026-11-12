@@ -57,7 +57,21 @@ export class PluginManagerWidget extends ReactWidget {
         return React.createElement(
             'div',
             { style: styles.PANEL_STYLE },
-            React.createElement('h3', { style: styles.HEADING_STYLE }, 'Discovered plugins'),
+            React.createElement(
+                'div',
+                { style: styles.HEADER_ROW_STYLE },
+                React.createElement('h3', { style: styles.HEADING_STYLE }, 'Discovered plugins'),
+                React.createElement(
+                    'button',
+                    {
+                        type: 'button',
+                        style: styles.BUTTON_STYLE,
+                        title: 'Re-read the plugin folders, so a folder added or removed while the app runs is picked up.',
+                        onClick: () => void this.rescan()
+                    },
+                    'Refresh'
+                )
+            ),
             React.createElement(
                 'p',
                 { style: styles.SUMMARY_STYLE },
@@ -155,6 +169,17 @@ export class PluginManagerWidget extends ReactWidget {
     protected async toggleEnabled(pluginId: string, enabled: boolean): Promise<void> {
         try {
             await this.manager.setEnabled(pluginId, enabled);
+            this.snapshot = this.manager.getSnapshot();
+            this.update();
+        } catch (error) {
+            await this.messages.error(error instanceof Error ? error.message : String(error));
+        }
+    }
+
+    /** Re-reads the plugin folders; a folder dropped in while running shows up here. */
+    protected async rescan(): Promise<void> {
+        try {
+            await this.manager.refresh();
             this.snapshot = this.manager.getSnapshot();
             this.update();
         } catch (error) {

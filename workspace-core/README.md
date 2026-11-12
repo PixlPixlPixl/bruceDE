@@ -34,7 +34,7 @@ The workspace starts empty. Press F1 and run a menu entry:
 - `Open Git` — the Git panel
 - `Open Agent Chat` — the agent chat panel (AG-UI, falling back to ACP or Pi RPC)
 - `Open Projects` — project folders and their agent sessions
-- `Open Plugin Manager` — install/enable plugins and review the trust warning
+- `Open Plugin Manager` — enable/disable plugins, review the trust warning, and **Refresh** to re-read the plugin folders after adding or deleting one
 - `Save Layout` / `Load Layout` — snapshot the arrangement, restore it later
 
 Every panel above belongs to a plugin under `plugins/`. The host has no
@@ -203,8 +203,26 @@ The host publishes its own services under the `icebox.workspace` owner before an
 - `workspace.resources` (`WorkspaceResourceService`) — absolute path → stable URI, `stat`, `list`. Plugins must obtain resource URIs here rather than building `file://` strings, so File Browser and Git agree on identity.
 - `workspace.selection` (`WorkspaceSelectionService`) — the current `{ uri, ranges }` selection plus change notifications, mirrored onto the `workspace/selection-changed` event.
 - `workspace.dialogs` (`WorkspaceDialogService`) — the host's native folder picker. Plugins cannot import Theia's file dialog (it needs the shell's parent window and platform quirks), so Projects asks for a folder through this instead of building a picker.
+- `workspace.plugins` (`WorkspacePluginsService`) — the read-only plugin catalogue, provided on the backend side before any plugin activates. It is the counterpart of manifest-declared *data*: a plugin that contributes only `contributes.agents` has no code to register anything, so a consumer (agent-chat) has to ask the host which plugins exist and what they declare. Entries carry `id`, `name`, `version`, `builtIn`, `enabled` and `agents` — never a filesystem path.
 
 Service and event ids live in `@icebox/plugin-api` (`WORKSPACE_SERVICE_IDS`, `WORKSPACE_EVENT_IDS`).
+
+## Plugin roots and trust
+
+`resolvePluginRoots` returns each scanned folder with its kind rather than a bare
+path: `<appPath>/../plugins` and `<appPath>/plugins` are **built-in** (trusted,
+enabled by default), while `$ICEBOX_PLUGINS_DIR` and `~/.icebox/plugins` are
+**third-party** (disabled until the user accepts the warning). The override counts
+as third-party on purpose — it points at a folder someone prepared, not at what
+this installation shipped; before that distinction was carried by sniffing
+`/.icebox/` in the path, an override folder was silently treated as built-in and
+trusted.
+
+The manager's **Refresh** re-reads the folders and unloads plugins whose folder
+disappeared, so adding or removing a plugin does not need a restart. A plugin may
+now also declare no entrypoints at all when it contributes only manifest data;
+such a plugin runs no code, which is why its warning names the agent commands it
+declares instead of claiming third-party code with full system access.
 
 ## Host styles
 

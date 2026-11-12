@@ -5,6 +5,7 @@
  * This module must stay free of Theia, Lumino and Node imports: it is loaded by
  * both sides of the RPC boundary.
  */
+import type { PluginManifestContributionAgents } from '@icebox/plugin-api';
 
 /** RPC path the frontend proxy talks to. */
 export const PLUGIN_HOST_PATH = '/services/icebox/plugin-host';
@@ -89,6 +90,8 @@ export interface PluginDescriptor {
     readonly panels: readonly PluginContributionSummary[];
     readonly commands: readonly PluginContributionSummary[];
     readonly services: readonly string[];
+    /** Agent CLIs the plugin declares as manifest data; empty for most plugins. */
+    readonly agents: readonly PluginManifestContributionAgents[];
 }
 
 /** Why a plugin could not be accepted by the host. */

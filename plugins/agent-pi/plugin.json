@@ -1,0 +1,23 @@
+{
+    "id": "icebox.agent-pi",
+    "name": "Pi",
+    "version": "0.1.0",
+    "apiVersion": 1,
+    "description": "Declares the Pi agent CLI for agent chat. No code: the descriptor is manifest data.",
+    "entrypoints": {},
+    "contributes": {
+        "agents": [
+            {
+                "id": "pi",
+                "name": "Pi",
+                "protocol": "pi-rpc",
+                "command": "pi",
+                "args": [
+                    "--mode",
+                    "rpc",
+                    "--no-session"
+                ]
+            }
+        ]
+    }
+}

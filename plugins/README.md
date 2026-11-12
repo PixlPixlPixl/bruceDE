@@ -102,6 +102,13 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   Untracked and binary files show no counts rather than a fabricated zero.
   The header box is the same `6px 10px` as the other plugin panels, so the
   separator line matches when the panels sit side by side.
+- **Agent plugins** (`icebox.agent-pi`, `icebox.agent-gemini`,
+  `icebox.agent-claude-code`, `icebox.agent-opencode`, plus anything a user drops
+  in) — data only: a `plugin.json` whose `contributes.agents` names one agent CLI.
+  The host reads them at discovery time and never imports code, so they need no
+  build step and no entrypoints. Agent Chat turns them into picker entries,
+  enabled-or-not exactly as the plugin manager says. This is the pattern for
+  "add an agent without touching the app": see the Agent Chat section below.
 - **Agent Chat** (`icebox.agent-chat`) — backend half drives an installed agent
   CLI and provides `agent.sessions`. Three wire protocols are supported, because
   the ecosystem is not uniform, and **AG-UI is the primary one**:
@@ -205,19 +212,41 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   when the protocol has a shell passthrough (Pi's `bash` command; ACP agents in
   this plugin do not).
 
-  Agents come from `ICEBOX_AGENTS` (JSON array of
-  `{ id, name, protocol?, command?, args?, agui? }`, `protocol` defaults to
-  `acp`; `ICEBOX_ACP_AGENTS` is still accepted under its old name). `agui` is
-  that agent's AG-UI endpoint; `command` may be omitted when the agent exists only
-  behind AG-UI, and `ICEBOX_AGUI_URL` supplies a default endpoint for agents that
-  declare none (one gateway in front of several CLIs). The endpoint is the user's
-  own configuration, so it is only vetted, not allowlisted: it must be an
-  `http`/`https` URL without embedded credentials. Without
-  configuration, the built-in catalog is a **detection list, not a roster**: Pi,
-  Gemini CLI, Claude Code (ACP) and OpenCode are probed on `PATH`, and only the
-  ones actually installed are offered — the panel never shows a dead entry for an
-  agent that is not there. The panel polls the service because the host cannot
-  push backend events across the RPC boundary.
+  **Agents are plugins.** Nothing about a specific agent is compiled into this
+  panel: each one is declared by a plugin's manifest and read through
+  `workspace.plugins`, the host's read-only plugin catalogue. One plugin per
+  agent, data only — `plugins/agent-pi/`, `agent-gemini/`, `agent-claude-code/`
+  and `agent-opencode/` are a `plugin.json` with `"entrypoints": {}` and
+  `contributes.agents`, plus a `package.json`, and nothing else:
+
+  ```json
+  { "id": "icebox.agent-codex", "name": "Codex", "version": "0.1.0", "apiVersion": 1,
+    "entrypoints": {},
+    "contributes": { "agents": [
+      { "id": "codex", "name": "Codex", "protocol": "acp", "command": "codex", "args": ["acp"] }
+    ] } }
+  ```
+
+  So: to add an agent, drop that folder in `~/.icebox/plugins`, press **Refresh**
+  in the plugin manager (no restart), accept the warning — it names the commands
+  the plugin declares, because a data-only plugin runs no code of its own
+  — and Enable. To remove one, disable its plugin (the picker loses it within a
+  few seconds) or delete the folder and press Refresh. Never an app rebuild, never
+  an edit to this plugin's source. The picker's tooltip names the declaring
+  plugin (`declared by icebox.agent-pi`), so which toggle to flip is visible.
+
+  Each agent is probed on `PATH` and shown dimmed when its binary is missing,
+  with a short-lived cache so the panel's poll stays cheap; an agent that
+  declares an AG-UI endpoint is available without any binary. `ICEBOX_AGENTS`
+  (JSON array of `{ id, name, protocol?, command?, args?, agui? }`,
+  `ICEBOX_ACP_AGENTS` still accepted as its old name) remains the escape hatch
+  for an agent no plugin declares, and **replaces** the catalogue when set — an
+  explicit configuration is the user's decision. `agui` is that agent's AG-UI
+  endpoint; `command` may be omitted for an agent that exists only behind AG-UI,
+  and `ICEBOX_AGUI_URL` supplies a default endpoint for agents that declare none
+  (one gateway in front of several CLIs). The endpoint is the user's own
+  configuration, so it is only vetted, not allowlisted: it must be an
+  `http`/`https` URL without embedded credentials.
 
   Agent executables are resolved to a real path first: npm shims on Windows are
   `.cmd` files that cannot be passed to `CreateProcess`, so they are launched
