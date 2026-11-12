@@ -108,7 +108,10 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   normalises all of them into one vocabulary: AG-UI events, emitted in process
   (`TEXT_MESSAGE_*`, `TOOL_CALL_RESULT`, `CUSTOM`, `STATE_*`). It provides
   `agent.runtime`, whose `state(sessionId, since?)` returns only events after a
-  caller's cursor — an incremental poll, not a transcript resend. Capabilities
+  caller's cursor — an incremental read, not a transcript resend. A panel does not
+  ask on a timer at all: `waitForChange(sessionId, revision)` stays pending on the
+  backend and answers the moment the session's revision moves, so one change costs
+  one read. Capabilities
   (models, thinking levels, usage, commands, shell) stay on the service surface,
   because the protocol that has none of them must not be able to hide the ones
   that do. A chat panel therefore contains no protocol code: it folds events and
@@ -203,7 +206,7 @@ Frontend bundles may also import these host modules directly; the bundler rewrit
   `set_thinking_level`; ACP agents supply models and commands only when they
   advertise them, so nothing is offered that the agent cannot do. Pi lists
   thousands of models, so the catalogue is fetched on demand by a filtered
-  `searchModels` call instead of travelling with every state poll.
+  `searchModels` call instead of travelling with every state read.
 
   The composer wraps its content as it is typed and stops growing at a fixed
   height, where it scrolls, so a long prompt never pushes the transcript off

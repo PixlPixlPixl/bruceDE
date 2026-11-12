@@ -164,6 +164,7 @@ See [plugins/README.md](./plugins/README.md). Each plugin folder has a `plugin.j
 - `packages/plugin-build/`: esbuild bundler for plugin entrypoints.
 - `packages/ui-kit/`: optional shared visual tokens/primitives.
 - `scripts/`: `icebox.mjs` (install/update/uninstall/start logic), `brand-generated-html.mjs` (post-build window titles), `ensure-ffmpeg-addon.mjs` (Electron's ffmpeg repair) and `verify-agent-sessions.mjs` (the head-less agent harness behind `npm run verify:agent-sessions`).
+- `.github/workflows/verify.yml`: installs, builds the browser target and runs the agent harness on every push and pull request.
 - `plugins/`: self-contained feature plugin packages (terminal, agent-chat, projects, file-browser, Git).
 - `plugins/agents/`: one data-only declaration per agent CLI (`plugin.json` + `package.json`,
   no code) — Pi, Gemini, Claude Code, OpenCode and Codex today.

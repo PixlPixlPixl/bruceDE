@@ -57,6 +57,8 @@ export interface AgentState {
     /** Working directory the agent was started in; the `@` completion starts here. */
     readonly cwd?: string;
     readonly capabilities?: AgentCapabilities;
+    /** Version of this session; see {@link AgentSessionsService.waitForChange}. */
+    readonly revision?: number;
     readonly model?: AgentModelState;
     readonly usage?: AgentUsageInfo;
     readonly commands?: readonly AgentCommand[];
@@ -93,6 +95,13 @@ export interface AgentSessionsService {
     openSession(sessionId: string, agentId: string, options?: AgentSessionOptions): Promise<AgentState>;
     /** Transcript and status of a session; empty and idle when it is unknown. */
     state(sessionId: string): Promise<AgentState>;
+    /**
+     * Resolves when this session changes, or after a timeout if it does not.
+     *
+     * The session's `revision` is the version to pass in; the answer is the current
+     * revision, so a caller that gets the same number back knows to wait again.
+     */
+    waitForChange(sessionId: string, since: number): Promise<number>;
     /**
      * Cheap status/title/handle snapshot of a session.
      *

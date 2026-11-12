@@ -306,7 +306,31 @@ async function main() {
     const extra = await sessions.interrupt('check-stop').catch(error => ({ error: String(error) }));
     check('interrupt on an idle session is harmless', !extra?.error, String(extra?.error ?? '').slice(0, 80));
 
-    // 6. The runtime's cursor is incremental: no resend, no lost event.
+    // 6. A session announces its own changes instead of being polled.
+    const baseline = (await runtime.state('check-stop')).revision;
+    check('state reports a revision', typeof baseline === 'number', String(baseline));
+    const pendingChange = runtime.waitForChange('check-stop', baseline);
+    let settledByPush = false;
+    pendingChange.then(() => { settledByPush = true; }, () => undefined);
+    await new Promise(resolve => setTimeout(resolve, 50));
+    check('waitForChange stays pending while nothing happens', !settledByPush);
+    await sessions.send('check-stop', 'keep working');
+    const pushedTo = await pendingChange;
+    check('waitForChange answers as soon as the session changes', pushedTo > baseline, `${baseline} -> ${pushedTo}`);
+    // A session that never changes must not answer with a change: the timeout
+    // returns the revision it was given, which tells the caller to wait again.
+    // Checked on its own idle session, because the one above is still settling an
+    // interrupt and would legitimately wake a waiter.
+    const quiet = (await runtime.state('check-quiet')).revision;
+    const timedOut = await runtime.waitForChange('check-quiet', quiet, 700);
+    check('waitForChange times out with the same revision', timedOut === quiet, `${quiet} / ${timedOut}`);
+    await runtime.release('check-quiet');
+    // Already-stale callers are answered at once rather than waiting for the next
+    // change that may never come.
+    const stale = await runtime.waitForChange('check-stop', quiet - 1, 5000);
+    check('waitForChange answers immediately when already behind', stale >= quiet, String(stale));
+
+    // 7. The runtime's cursor is incremental: no resend, no lost event.
     const first = await runtime.state('check-agui');
     const second = await runtime.state('check-agui', first.cursor);
     check('runtime state returns events after a cursor only', second.events.length === 0,

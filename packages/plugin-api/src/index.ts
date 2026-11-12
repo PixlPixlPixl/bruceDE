@@ -512,6 +512,15 @@ export interface AgentRuntimeState {
     /** Events emitted after the requested cursor, oldest first. */
     readonly events: readonly AgUiEvent[];
     readonly cursor: number;
+    /**
+     * Counter bumped on every change to this session, including ones that emit no
+     * event (a status flip, a model switch, a queued message).
+     *
+     * `cursor` only moves when an event is appended, so it cannot announce a
+     * change on its own; `revision` is what {@link AgentRuntimeService.waitForChange}
+     * waits on.
+     */
+    readonly revision: number;
 }
 
 /**
@@ -530,6 +539,15 @@ export interface AgentRuntimeService {
     open(sessionId: string, agentId: string, options?: AgentSessionOptions): Promise<AgentRuntimeState>;
     /** Current state and events newer than `since`. */
     state(sessionId: string, since?: number): Promise<AgentRuntimeState>;
+    /**
+     * Resolves when this session changes, or after `timeoutMs` if it does not.
+     *
+     * This is the push channel: the call stays pending on the backend and returns
+     * the current revision as soon as anything moves, so a panel never has to ask
+     * on a timer. It answers immediately if `since` is already behind. A timeout
+     * is not an error — the caller simply waits again.
+     */
+    waitForChange(sessionId: string, since: number, timeoutMs?: number): Promise<number>;
     /** Appends the prompt and starts the turn. */
     send(sessionId: string, text: string): Promise<AgentRuntimeState>;
     /**

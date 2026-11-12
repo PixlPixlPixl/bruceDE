@@ -1,0 +1,50 @@
+name: verify
+
+# The checks the repository already has, run on every push and pull request.
+#
+# Deliberately one job: the browser bundle and the agent harness share the same
+# install and the same build output, so splitting them would compile the
+# workspace twice to prove the same thing.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-verify:
+    name: build and verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # Pinned to the release commit, not a mutable tag: a moving tag can be
+      # repointed at other code without a change in this repository.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # The build never pushes: keeping the token in .git/config only widens
+          # what a compromised postinstall script could reach.
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+
+      # The root postinstall builds the workspace packages, so this also proves
+      # that a fresh checkout compiles without a manual first step.
+      - name: Install
+        run: npm ci
+
+      - name: Build browser target
+        run: npm run build:browser
+
+      # Head-less: a fake plugin host and an in-process AG-UI server, so nothing
+      # here needs an agent CLI installed.
+      - name: Verify the agent runtime
+        run: npm run verify:agent-sessions

@@ -20,7 +20,11 @@ import type {
 
 const PANEL_CHAT = 'agent-chat.conversation';
 const COMMAND_OPEN = 'icebox.agent-chat.open';
-const POLL_INTERVAL_MS = 700;
+/**
+ * Timer used only when the runtime cannot push (an older runtime, or one that
+ * failed mid-wait). The normal path holds a pending `waitForChange` instead.
+ */
+const POLL_FALLBACK_MS = 1000;
 /**
  * How often the agent list is re-read.
  *
@@ -320,29 +324,65 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
         void sessions.release(sessionId).catch(() => undefined);
     }, [sessionId, sessions]);
 
-    // Poll the backend while the panel is mounted; there is no push channel.
+    // Follow the session while the panel is mounted.
+    //
+    // The runtime holds the panel's request open and answers it the moment the
+    // session changes (`waitForChange`), so there is no timer and no wasted work:
+    // one pending call, one incremental read per actual change. The read is still
+    // needed because the answer is a revision, not the state itself, and because
+    // events travel by cursor rather than being pushed.
     React.useEffect(() => {
         if (!agentId) {
             return;
         }
         let cancelled = false;
-        const poll = async (): Promise<void> => {
+        let revision = 0;
+
+        const read = async (): Promise<boolean> => {
             try {
                 const next = await sessions.state(sessionId);
-                if (!cancelled) {
-                    setState(next);
+                if (cancelled) {
+                    return false;
                 }
+                setState(next);
+                revision = next.revision ?? revision;
+                setError(undefined);
+                return true;
             } catch (cause) {
                 if (!cancelled) {
                     setError(cause instanceof Error ? cause.message : String(cause));
                 }
+                return false;
             }
         };
-        void poll();
-        const timer = setInterval(() => void poll(), POLL_INTERVAL_MS);
+
+        /** Waits for a change, falling back to a timer if the runtime cannot push. */
+        const waitForChange = async (): Promise<void> => {
+            if (typeof sessions.waitForChange === 'function') {
+                try {
+                    revision = (await sessions.waitForChange(sessionId, revision)) ?? revision;
+                    return;
+                } catch {
+                    // A runtime that vanished mid-wait must not spin: fall through
+                    // to the timer for this round.
+                }
+            }
+            await new Promise(resolve => setTimeout(resolve, POLL_FALLBACK_MS));
+        };
+
+        const follow = async (): Promise<void> => {
+            await read();
+            while (!cancelled) {
+                await waitForChange();
+                if (cancelled) {
+                    return;
+                }
+                await read();
+            }
+        };
+        void follow();
         return () => {
             cancelled = true;
-            clearInterval(timer);
         };
     }, [agentId, sessionId, sessions]);
 

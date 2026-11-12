@@ -99,7 +99,8 @@ export function activate(api: BackendPluginAPI): void {
             model: state.model,
             usage: state.usage,
             commands: state.commands,
-            resume: state.resume
+            resume: state.resume,
+            revision: state.revision
         };
     };
 
@@ -158,6 +159,12 @@ export function activate(api: BackendPluginAPI): void {
             const orchestration = runtime();
             return orchestration ? orchestration.listSessions() : [];
         },
+
+        waitForChange: (sessionId: string, since: number) =>
+            // Not serialised, and deliberately so: this call is *supposed* to stay
+            // pending, and queueing it behind the fold would deadlock the panel's
+            // own updates.
+            requireRuntime().waitForChange(sessionId, since),
 
         send: (sessionId, text) =>
             serial(sessionId, async () => {

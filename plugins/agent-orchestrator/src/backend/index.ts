@@ -29,8 +29,19 @@ import type {
     ChatEntry
 } from '@icebox/plugin-api';
 
-/** The event log is capped so a long session cannot flood the RPC channel. */
+/**
+ * The event log is capped so a long session cannot flood the RPC channel.
+ */
 const MAX_EVENTS = 400;
+
+/**
+ * How long one `waitForChange` stays pending.
+ *
+ * It is a ceiling, not a poll interval: a change answers at once, and the timeout
+ * only stops a request from living forever on a silent session. The holder asks
+ * again.
+ */
+const CHANGE_TIMEOUT_MS = 20_000;
 /** Models returned by one `searchModels` call when the caller does not say. */
 const DEFAULT_MODEL_LIMIT = 40;
 /** Pi lists thousands of models; a picker never needs more than this. */
@@ -233,6 +244,12 @@ interface LiveSession {
     interrupted?: boolean;
     /** ISO timestamp of the last state change, for the session summary. */
     updatedAt: string;
+    /**
+     * Bumped by `touch()`, so every state change is observable even when it emits
+     * no event. `waitForChange` waits on this; the event cursor cannot serve,
+     * because a status flip appends nothing to the log.
+     */
+    revision: number;
 }
 
 /**
@@ -275,7 +292,8 @@ export function activate(api: BackendPluginAPI): void {
         // A consumer asks for what it has not seen: everything before `since`
         // already reached it, and a trim must not shift its place.
         events: session.events.slice(Math.max(0, since - session.eventsBase)),
-        cursor: session.eventsBase + session.events.length
+        cursor: session.eventsBase + session.events.length,
+        revision: session.revision
     });
 
     const now = (): string => new Date().toISOString();
@@ -286,9 +304,15 @@ export function activate(api: BackendPluginAPI): void {
      * The payload is just the id: a listener that wants details asks
      * `summary()`, so transcripts never travel on the shared event bus.
      */
+    /**
+     * Announces a state change: to workspace listeners and to whichever panels are
+     * holding a `waitForChange` open.
+     */
     const touch = (session: LiveSession): void => {
         session.updatedAt = now();
+        session.revision += 1;
         api.events.emit(WORKSPACE_EVENT_IDS.agentSessionChanged, { sessionId: session.sessionId });
+        wakeWaiters(session);
     };
 
     const summaryOf = (session: LiveSession): AgentSessionSummary => ({
@@ -322,7 +346,8 @@ export function activate(api: BackendPluginAPI): void {
             streamingText: false,
             persist: false,
             replaying: false,
-            updatedAt: now()
+            updatedAt: now(),
+            revision: 0
         };
         sessions.set(sessionId, created);
         return created;
@@ -390,6 +415,35 @@ export function activate(api: BackendPluginAPI): void {
         },
 
         state: async (sessionId, since) => snapshot(sessionFor(sessionId), since ?? 0),
+
+        waitForChange: async (sessionId, since, timeoutMs = CHANGE_TIMEOUT_MS) => {
+            const session = sessionFor(sessionId);
+            if (session.revision > since) {
+                return session.revision;
+            }
+            return new Promise<number>(resolve => {
+                // A timeout answers with the unchanged revision, which tells the
+                // caller "wait again" without a second kind of result.
+                const wait = (revision: number): void => {
+                    clearTimeout(timer);
+                    resolve(revision);
+                };
+                const timer = setTimeout(() => {
+                    const set = waiters.get(sessionId);
+                    set?.delete(wait);
+                    if (set && set.size === 0) {
+                        waiters.delete(sessionId);
+                    }
+                    resolve(session.revision);
+                }, timeoutMs);
+                let set = waiters.get(sessionId);
+                if (!set) {
+                    set = new Set();
+                    waiters.set(sessionId, set);
+                }
+                set.add(wait);
+            });
+        },
 
         summary: async sessionId => {
             const live = sessions.get(sessionId);
@@ -472,7 +526,9 @@ export function activate(api: BackendPluginAPI): void {
             // has nothing to stop and must not manufacture one.
             const session = sessions.get(sessionId);
             if (!session || (session.status !== 'running' && session.status !== 'starting')) {
-                return session ? snapshot(session) : { sessionId, agentId: '', status: 'idle', events: [], cursor: 0 };
+                return session
+                    ? snapshot(session)
+                    : { sessionId, agentId: '', status: 'idle', events: [], cursor: 0, revision: 0 };
             }
             const link = session.link;
             if (!link?.interrupt) {
@@ -515,6 +571,7 @@ export function activate(api: BackendPluginAPI): void {
             // Tell listeners before the record disappears: a project list keeps
             // the last known status/handle of a closed tab.
             touch(session);
+            waiters.delete(sessionId);
             sessions.delete(sessionId);
         },
 
@@ -1585,6 +1642,27 @@ async function requestFromAgent(method: string, params: Record<string, unknown>)
     throw new Error(`Unsupported ACP client method "${method}".`);
 }
 
+/**
+ * Pending `waitForChange` calls, one resolver per waiting panel.
+ *
+ * Module scope, not per-`activate`: a recorded event has to wake a waiter as much
+ * as a status change does, and events are appended by helpers that live out here.
+ */
+const waiters = new Map<string, Set<(revision: number) => void>>();
+
+const wakeWaiters = (session: LiveSession): void => {
+    const waiting = waiters.get(session.sessionId);
+    if (!waiting) {
+        return;
+    }
+    // Cleared before resolving: a resolver that re-waits must not be called twice
+    // by the same change.
+    waiters.delete(session.sessionId);
+    for (const resolve of waiting) {
+        resolve(session.revision);
+    }
+};
+
 function resetEvents(session: LiveSession): void {
     session.eventsBase += session.events.length;
     session.events = [];
@@ -1594,6 +1672,11 @@ function resetEvents(session: LiveSession): void {
 
 function recordEvent(session: LiveSession, event: RuntimeEvent): void {
     session.events.push(event);
+    // Text deltas change the transcript without a status change, so the bump
+    // belongs here: a panel waiting for a change has to see streamed text as it
+    // arrives, not when the turn happens to end.
+    session.revision += 1;
+    wakeWaiters(session);
     if (session.events.length > MAX_EVENTS) {
         const dropped = session.events.length - MAX_EVENTS;
         session.events.splice(0, dropped);
