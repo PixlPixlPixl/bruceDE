@@ -72,7 +72,17 @@ behaves exactly as on `main`.
    `CUSTOM icebox/user-message`, `system` → `CUSTOM icebox/system`). Drop the
    entry array: keep `title` (first user prompt) for session lists and the
    bounded event log with a monotonic cursor.
-2. **Surface change and facade.** The orchestrator starts providing
+2. ~~**Surface change and facade.**~~ Done: the orchestrator provides
+   `agent.runtime` (events + monotonic cursor, log trimmed with `eventsBase` so a
+   held cursor survives a trim), and `agent-chat/src/backend/index.ts` is a
+   facade that provides `agent.sessions` by folding events with
+   `applyAgUiEvents`. The facade resolves the runtime **lazily** (`has()` then
+   `get()`), because `icebox.agent-chat` sorts before
+   `icebox.agent-orchestrator`; a missing runtime answers with a stated error
+   ("Enable Agent Orchestrator in the plugin manager") and keeps the rendered
+   transcript instead of throwing.
+
+   The orchestrator starts providing
    `agent.runtime` (events + cursor) instead of `agent.sessions`; a new
    `agent-chat/src/backend/index.ts` becomes the facade. Then:
    **`agent-chat/src/backend/index.ts` becomes a facade.** It keeps

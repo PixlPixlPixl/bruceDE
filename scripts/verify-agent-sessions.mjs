@@ -21,7 +21,8 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
-const BACKEND = path.join(root, 'plugins', 'agent-orchestrator', 'dist', 'backend.js');
+const ORCHESTRATOR = path.join(root, 'plugins', 'agent-orchestrator', 'dist', 'backend.js');
+const PANEL_BACKEND = path.join(root, 'plugins', 'agent-chat', 'dist', 'backend.js');
 
 const failures = [];
 let checks = 0;
@@ -113,15 +114,18 @@ function catalogue(aguiPort) {
     ];
 }
 
-/** Fake BackendPluginAPI: services, events and the workspace path, nothing more. */
-function fakeApi({ catalogueEntries, cwd }) {
-    const services = new Map([
-        ['workspace.plugins', { list: () => catalogueEntries }]
-    ]);
+/**
+ * Fake BackendPluginAPI for one plugin.
+ *
+ * `services` is shared, so the orchestrator's `agent.runtime` and the panel's
+ * `agent.sessions` meet exactly as they do inside the app: one registry, two
+ * plugins, no renderer in between.
+ */
+function fakeApi({ id, directory, services, cwd }) {
     return {
-        manifest: { id: 'icebox.agent-orchestrator', name: 'Agent Orchestrator', version: '0.1.0', apiVersion: 1, entrypoints: {} },
+        manifest: { id, name: id, version: '0.1.0', apiVersion: 1, entrypoints: {} },
         side: 'backend',
-        origin: { builtIn: true, directory: path.join(root, 'plugins', 'agent-orchestrator') },
+        origin: { builtIn: true, directory },
         workspace: { root: cwd, cwd },
         services: {
             provide: (serviceId, service) => {
@@ -147,21 +151,38 @@ function fakeApi({ catalogueEntries, cwd }) {
 }
 
 async function main() {
-    if (!existsSync(BACKEND)) {
-        console.error(`Cannot run the check: ${path.relative(root, BACKEND)} is missing. Run: npm run build:plugins`);
-        process.exit(1);
+    for (const file of [ORCHESTRATOR, PANEL_BACKEND]) {
+        if (!existsSync(file)) {
+            console.error(`Cannot run the check: ${path.relative(root, file)} is missing. Run: npm run build:plugins`);
+            process.exit(1);
+        }
     }
-    const api = fakeApi({ catalogueEntries: [], cwd: root });
 
-    // The catalogue needs the stub's port, so build it after the server starts.
+    // The catalogue needs the stub's port, so it is filled after the server starts.
     const stub = await startAgUiStub();
-    api.services.get('workspace.plugins'); // touch: the service exists before activation
-    api.provided.set('workspace.plugins', { list: () => catalogue(stub.port) });
+    const services = new Map([
+        ['workspace.plugins', { list: () => catalogue(stub.port) }]
+    ]);
+    const shared = { catalogueEntries: [], services, cwd: root };
 
     console.log('Agent session check');
-    const { activate } = await import(`file://${BACKEND}`);
-    activate(api);
-    const sessions = api.provided.get('agent.sessions');
+    const orchestratorModule = await import(`file://${ORCHESTRATOR}`);
+    orchestratorModule.activate(fakeApi({
+        ...shared,
+        id: 'icebox.agent-orchestrator',
+        directory: path.join(root, 'plugins', 'agent-orchestrator')
+    }));
+    const panelModule = await import(`file://${PANEL_BACKEND}`);
+    panelModule.activate(fakeApi({
+        ...shared,
+        id: 'icebox.agent-chat',
+        directory: path.join(root, 'plugins', 'agent-chat')
+    }));
+
+    const sessions = services.get('agent.sessions');
+    const runtime = services.get('agent.runtime');
+    check('orchestrator provides the runtime', typeof runtime?.state === 'function');
+    check('panel provides the session surface', typeof sessions?.state === 'function');
 
     // 1. Agent discovery comes from the plugin catalogue, not from source.
     const agents = await sessions.listAgents();
@@ -215,7 +236,17 @@ async function main() {
         console.log('  skip  CLI session (pi is not installed)');
     }
 
-    // 5. Releasing a session frees it: the panel's transcript is gone.
+    // 5. The runtime's cursor is incremental: no resend, no lost event.
+    const first = await runtime.state('check-agui');
+    const second = await runtime.state('check-agui', first.cursor);
+    check('runtime state returns events after a cursor only', second.events.length === 0,
+        `${first.events.length} then ${second.events.length}`);
+    check('runtime cursor advances', second.cursor === first.cursor, `${first.cursor} / ${second.cursor}`);
+    await sessions.send('check-agui', 'another turn');
+    const third = await runtime.state('check-agui', second.cursor);
+    check('runtime reports new events after a prompt', third.events.length > 0, `${third.events.length} events`);
+
+    // 6. Releasing a session frees it: the panel's transcript is gone.
     await sessions.release('check-agui');
     const released = await sessions.summary('check-agui');
     check('release() drops the live session', released.live === false, JSON.stringify(released));

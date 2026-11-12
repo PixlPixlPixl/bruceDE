@@ -19,17 +19,18 @@ import type {
     AgentModelInfo,
     AgentModelState,
     AgentProtocol,
+    AgentRuntimeService,
+    AgentRuntimeState,
     AgentSessionHandle,
     AgentSessionOptions,
     AgentSessionSummary,
-    AgentSessionsService,
-    AgentState,
     AgentUsageInfo,
+    AgUiEvent as RuntimeEvent,
     ChatEntry
-} from '../shared.js';
+} from '@icebox/plugin-api';
 
-/** Transcripts are capped so a long session cannot flood the RPC channel. */
-const MAX_ENTRIES = 400;
+/** The event log is capped so a long session cannot flood the RPC channel. */
+const MAX_EVENTS = 400;
 /** Models returned by one `searchModels` call when the caller does not say. */
 const DEFAULT_MODEL_LIMIT = 40;
 /** Pi lists thousands of models; a picker never needs more than this. */
@@ -179,8 +180,20 @@ interface LiveSession {
     agentId: string;
     agent?: AgentDescriptor;
     link?: AgentLink;
-    status: AgentState['status'];
-    entries: ChatEntry[];
+    status: AgentRuntimeState['status'];
+    /**
+     * The AG-UI events this session has emitted, oldest first.
+     *
+     * `eventsBase` counts events dropped from the front once the log hits
+     * `MAX_EVENTS`, so a cursor a consumer holds stays meaningful across a trim:
+     * it addresses `eventsBase + index`, not an array position.
+     */
+    events: RuntimeEvent[];
+    eventsBase: number;
+    /** Message id of the assistant entry currently streaming, when there is one. */
+    messageId?: string;
+    /** First line of the first prompt, kept for session lists. */
+    title?: string;
     error?: string;
     cwd: string;
     model?: AgentModelState;
@@ -235,19 +248,23 @@ export function activate(api: BackendPluginAPI): void {
         return agent;
     };
 
-    const snapshot = (session: LiveSession): AgentState => ({
+    const snapshot = (session: LiveSession, since = 0): AgentRuntimeState => ({
+        sessionId: session.sessionId,
         agentId: session.agentId,
         status: session.status,
         protocol: session.protocol,
-        aguiUnavailable: session.aguiUnavailable,
-        entries: [...session.entries],
         error: session.error,
         cwd: session.cwd,
         capabilities: session.link?.capabilities,
         model: session.model,
         usage: session.usage,
         commands: session.commands,
-        resume: session.resume
+        resume: session.resume,
+        title: session.title,
+        // A consumer asks for what it has not seen: everything before `since`
+        // already reached it, and a trim must not shift its place.
+        events: session.events.slice(Math.max(0, since - session.eventsBase)),
+        cursor: session.eventsBase + session.events.length
     });
 
     const now = (): string => new Date().toISOString();
@@ -263,23 +280,13 @@ export function activate(api: BackendPluginAPI): void {
         api.events.emit(WORKSPACE_EVENT_IDS.agentSessionChanged, { sessionId: session.sessionId });
     };
 
-    /** First line of the first prompt, used as the session title in a list. */
-    const titleOf = (session: LiveSession): string | undefined => {
-        const first = session.entries.find(entry => entry.role === 'user');
-        const line = first?.text.trim().split('\n')[0]?.trim();
-        if (!line) {
-            return undefined;
-        }
-        return line.length > 80 ? `${line.slice(0, 79)}…` : line;
-    };
-
     const summaryOf = (session: LiveSession): AgentSessionSummary => ({
         sessionId: session.sessionId,
         agentId: session.agentId,
         status: session.status,
         live: true,
         cwd: session.cwd,
-        title: titleOf(session),
+        title: session.title,
         resume: session.resume,
         updatedAt: session.updatedAt
     });
@@ -295,7 +302,8 @@ export function activate(api: BackendPluginAPI): void {
             sessionId,
             agentId: '',
             status: 'idle',
-            entries: [],
+            events: [],
+            eventsBase: 0,
             cwd,
             commands: [],
             models: [],
@@ -309,10 +317,10 @@ export function activate(api: BackendPluginAPI): void {
         return created;
     };
 
-    const service: AgentSessionsService = {
+    const service: AgentRuntimeService = {
         listAgents: () => agents(),
 
-        openSession: async (sessionId: string, agentId: string, options?: AgentSessionOptions) => {
+        open: async (sessionId: string, agentId: string, options?: AgentSessionOptions) => {
             const agent = await agentById(agentId);
             const session = sessionFor(sessionId);
             // A handle for another agent would resume the wrong process; the
@@ -334,7 +342,7 @@ export function activate(api: BackendPluginAPI): void {
             session.link = undefined;
             session.agentId = agentId;
             session.agent = agent;
-            session.entries = [];
+            resetEvents(session);
             session.status = 'idle';
             session.error = undefined;
             session.streamingText = false;
@@ -370,7 +378,7 @@ export function activate(api: BackendPluginAPI): void {
             return snapshot(session);
         },
 
-        state: async sessionId => snapshot(sessionFor(sessionId)),
+        state: async (sessionId, since) => snapshot(sessionFor(sessionId), since ?? 0),
 
         summary: async sessionId => {
             const live = sessions.get(sessionId);
@@ -380,7 +388,7 @@ export function activate(api: BackendPluginAPI): void {
             return summaryOf(live);
         },
 
-        listLiveSessions: async () => [...sessions.values()].map(session => summaryOf(session)),
+        listSessions: async () => [...sessions.values()].map(session => summaryOf(session)),
 
         send: async (sessionId, text) => {
             const session = sessionFor(sessionId);
@@ -405,7 +413,7 @@ export function activate(api: BackendPluginAPI): void {
                 const previous = session.resume;
                 await guard(session, async () => {
                     await introspect.newSession!();
-                    session.entries = [];
+                    resetEvents(session);
                     session.queue = [];
                     session.usage = undefined;
                     session.streamingText = false;
@@ -523,7 +531,7 @@ export function activate(api: BackendPluginAPI): void {
         }
     };
 
-    api.services.provide(WORKSPACE_SERVICE_IDS.agentSessions, service);
+    api.services.provide(WORKSPACE_SERVICE_IDS.agentRuntime, service);
 
     // Native handles are invisible to Cordis; the plugin must release them itself.
     api.onDispose(() => {
@@ -884,7 +892,12 @@ export function activate(api: BackendPluginAPI): void {
                 .then(result => piTranscript(result?.messages ?? []))
                 .catch(() => []);
             if (restored.length > 0) {
-                session.entries = restored.slice(-MAX_ENTRIES);
+                // The agent's own history, replayed as the same vocabulary a live
+                // turn emits, so a resumed panel renders it identically.
+                for (const entry of restored.slice(-MAX_EVENTS)) {
+                    pushEntry(session, entry);
+                    session.streamingText = false;
+                }
                 touch(session);
             }
         }
@@ -1323,11 +1336,30 @@ function appendAgUiEvent(session: LiveSession, event: AgUiEvent): void {
  * `@path` attachments.
  */
 function messageHistory(session: LiveSession, prompt: string): readonly AgUiMessage[] {
+    // Rebuilt from the event log rather than a transcript: the vocabulary is the
+    // record, so a resumed conversation and a live one rebuild identically.
     const history: AgUiMessage[] = [];
-    for (const entry of session.entries) {
-        const role = messageRole(entry);
-        if (role) {
-            history.push({ id: agUiId(role), role, content: entry.text });
+    const openMessages = new Map<string, { role: 'assistant'; content: string }>();
+    for (const event of session.events) {
+        if (event.type === 'CUSTOM' && event.name === 'icebox/user-message') {
+            const text = typeof event.value.text === 'string' ? event.value.text : undefined;
+            if (text) {
+                history.push({ id: agUiId('user'), role: 'user', content: text });
+            }
+        } else if (event.type === 'TEXT_MESSAGE_START') {
+            openMessages.set(event.messageId, { role: 'assistant', content: '' });
+        } else if (event.type === 'TEXT_MESSAGE_CONTENT') {
+            const message = openMessages.get(event.messageId);
+            if (message) {
+                message.content += event.delta;
+            } else {
+                openMessages.set(event.messageId, { role: 'assistant', content: event.delta });
+            }
+        } else if (event.type === 'TEXT_MESSAGE_END') {
+            const message = openMessages.get(event.messageId);
+            if (message && message.content) {
+                history.push({ id: event.messageId, role: message.role, content: message.content });
+            }
         }
     }
     const last = history[history.length - 1];
@@ -1342,17 +1374,6 @@ function messageHistory(session: LiveSession, prompt: string): readonly AgUiMess
 function truncate(text: string, limit: number): string {
     const single = text.replace(/\s+/g, ' ').trim();
     return single.length > limit ? `${single.slice(0, limit - 1)}…` : single;
-}
-
-/** The AG-UI role of a transcript entry; tool and system entries carry none. */
-function messageRole(entry: ChatEntry): 'user' | 'assistant' | undefined {
-    if (entry.role === 'user') {
-        return 'user';
-    }
-    if (entry.role === 'agent') {
-        return 'assistant';
-    }
-    return undefined;
 }
 
 /**
@@ -1436,12 +1457,16 @@ function answerPiUiRequest(
 
 /** Streams text into the trailing agent entry, or starts a new one. */
 function appendAgentText(session: LiveSession, text: string): void {
-    const last = session.entries[session.entries.length - 1];
-    if (last && last.role === 'agent' && session.streamingText) {
-        session.entries[session.entries.length - 1] = { role: 'agent', text: last.text + text };
+    const open = session.streamingText ? session.messageId : undefined;
+    if (open) {
+        const messageId = open;
+        recordEvent(session, { type: 'TEXT_MESSAGE_CONTENT', messageId, delta: text });
         return;
     }
-    pushEntry(session, { role: 'agent', text });
+    const messageId = `m${session.eventsBase + session.events.length + 1}`;
+    recordEvent(session, { type: 'TEXT_MESSAGE_START', messageId });
+    recordEvent(session, { type: 'TEXT_MESSAGE_CONTENT', messageId, delta: text });
+    session.messageId = messageId;
     session.streamingText = true;
 }
 
@@ -1476,10 +1501,58 @@ async function requestFromAgent(method: string, params: Record<string, unknown>)
     throw new Error(`Unsupported ACP client method "${method}".`);
 }
 
+function resetEvents(session: LiveSession): void {
+    session.eventsBase += session.events.length;
+    session.events = [];
+    session.messageId = undefined;
+    session.streamingText = false;
+}
+
+function recordEvent(session: LiveSession, event: RuntimeEvent): void {
+    session.events.push(event);
+    if (session.events.length > MAX_EVENTS) {
+        const dropped = session.events.length - MAX_EVENTS;
+        session.events.splice(0, dropped);
+        // Trimmed events stay addressable by cursor: a consumer holding position
+        // `n` must still be able to ask for everything after it.
+        session.eventsBase += dropped;
+    }
+}
+
+/**
+ * Transcript entry → AG-UI event.
+ *
+ * Every protocol mapping funnels through here, which is what makes one
+ * vocabulary describe all of them: text streams as `TEXT_MESSAGE_*`, tool
+ * activity as `TOOL_CALL_RESULT`, and the app-specific residue (who spoke, what
+ * the runtime noted) as `CUSTOM` events instead of invented event types.
+ */
 function pushEntry(session: LiveSession, entry: ChatEntry): void {
-    session.entries.push(entry);
-    if (session.entries.length > MAX_ENTRIES) {
-        session.entries.splice(0, session.entries.length - MAX_ENTRIES);
+    const nextId = (): string => `m${session.eventsBase + session.events.length + 1}`;
+    switch (entry.role) {
+        case 'agent': {
+            const messageId = nextId();
+            recordEvent(session, { type: 'TEXT_MESSAGE_START', messageId });
+            recordEvent(session, { type: 'TEXT_MESSAGE_CONTENT', messageId, delta: entry.text });
+            recordEvent(session, { type: 'TEXT_MESSAGE_END', messageId });
+            session.messageId = undefined;
+            return;
+        }
+        case 'tool': {
+            recordEvent(session, { type: 'TOOL_CALL_RESULT', toolCallId: nextId(), content: entry.text });
+            return;
+        }
+        case 'user': {
+            recordEvent(session, { type: 'CUSTOM', name: 'icebox/user-message', value: { text: entry.text } });
+            if (!session.title) {
+                const line = entry.text.trim().split('\n')[0]?.trim();
+                session.title = line ? (line.length > 80 ? `${line.slice(0, 79)}…` : line) : undefined;
+            }
+            return;
+        }
+        case 'system':
+            recordEvent(session, { type: 'CUSTOM', name: 'icebox/system', value: { text: entry.text } });
+            return;
     }
 }
 
