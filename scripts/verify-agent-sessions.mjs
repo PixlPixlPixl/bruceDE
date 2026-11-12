@@ -2,7 +2,7 @@
 /**
  * Regression check for the agent session backend.
  *
- * Runs the built plugin backends head-lessly with a fake `BackendPluginAPI`: no
+ * Runs the built orchestrator backend head-lessly with a fake `BackendPluginAPI`: no
  * Theia, no renderer, no plugin host. That is enough to exercise the parts a
  * refactor is most likely to break — plugin-declared agent discovery, the AG-UI
  * session path, the ACP/Pi fallback, resume handles and releasing a session.
@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
-const BACKEND = path.join(root, 'plugins', 'agent-chat', 'dist', 'backend.js');
+const BACKEND = path.join(root, 'plugins', 'agent-orchestrator', 'dist', 'backend.js');
 
 const failures = [];
 let checks = 0;
@@ -119,9 +119,9 @@ function fakeApi({ catalogueEntries, cwd }) {
         ['workspace.plugins', { list: () => catalogueEntries }]
     ]);
     return {
-        manifest: { id: 'icebox.agent-chat', name: 'Agent Chat', version: '0.1.0', apiVersion: 1, entrypoints: {} },
+        manifest: { id: 'icebox.agent-orchestrator', name: 'Agent Orchestrator', version: '0.1.0', apiVersion: 1, entrypoints: {} },
         side: 'backend',
-        origin: { builtIn: true, directory: path.join(root, 'plugins', 'agent-chat') },
+        origin: { builtIn: true, directory: path.join(root, 'plugins', 'agent-orchestrator') },
         workspace: { root: cwd, cwd },
         services: {
             provide: (serviceId, service) => {

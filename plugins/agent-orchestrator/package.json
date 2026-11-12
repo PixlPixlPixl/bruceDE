@@ -1,0 +1,16 @@
+{
+  "name": "@icebox/plugin-agent-orchestrator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Agent protocol adapters and session runtime.",
+  "peerDependencies": {
+    "@icebox/plugin-api": "0.1.0"
+  },
+  "scripts": {
+    "build": "node ../../packages/plugin-build/build.mjs ."
+  },
+  "devDependencies": {
+    "@icebox/plugin-build": "0.1.0"
+  }
+}

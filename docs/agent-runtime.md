@@ -58,16 +58,24 @@ behaves exactly as on `main`.
    `agent.runtime` replaces `agent.sessions` as its target, and a provider outage
    is reported as skipped rather than failed so an external hiccup never masks a
    regression.
-1. **Create `plugins/agent-orchestrator`.** Move `acp.ts`, `pi-rpc.ts`,
+1. **`plugins/agent-orchestrator` exists.** Done in two steps so each commit is
+   verifiable: the relocation (adapters, session machinery, `agent.sessions`
+   provided from the orchestrator; agent-chat is now a renderer-only plugin that
+   declares the dependency) and, next, the surface change below.
+
+   Then move `acp.ts`, `pi-rpc.ts`,
    `agui.ts`, `spawn.ts` and the session machinery out of
-   `plugins/agent-chat/src/backend/index.ts`. In the runtime, `pushEntry` is the
+   `plugins/agent-chat/src/backend/index.ts` (done). In the runtime, `pushEntry` is the
    single choke point every protocol mapping already goes through, so it becomes
    the place that records an `AgUiEvent` (role mapping: `agent` →
    `TEXT_MESSAGE_START`/`CONTENT`/`END`, `tool` → `TOOL_CALL_RESULT`, `user` →
    `CUSTOM icebox/user-message`, `system` → `CUSTOM icebox/system`). Drop the
    entry array: keep `title` (first user prompt) for session lists and the
    bounded event log with a monotonic cursor.
-2. **`agent-chat/src/backend/index.ts` becomes a facade.** It keeps
+2. **Surface change and facade.** The orchestrator starts providing
+   `agent.runtime` (events + cursor) instead of `agent.sessions`; a new
+   `agent-chat/src/backend/index.ts` becomes the facade. Then:
+   **`agent-chat/src/backend/index.ts` becomes a facade.** It keeps
    `agent.sessions` (Projects polls summaries through it) and delegates to
    `agent.runtime`, folding events with `applyAgUiEvents` so the existing
    `AgentState.entries` contract still holds for the panel. Keep `/new`,
