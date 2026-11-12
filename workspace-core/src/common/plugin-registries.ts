@@ -101,7 +101,7 @@ export class PluginEventBus {
     emit<T>(eventName: string, payload: T): void {
         const report = (error: unknown): void => {
             // eslint-disable-next-line no-console
-            console.error(`[plugin-host] Listener for "${eventName}" threw:`, error);
+            console.error('[plugin-host] Listener for "%s" threw:', eventName, error);
         };
         for (const { listener } of this.listeners.get(eventName) ?? []) {
             try {

@@ -82,7 +82,7 @@ export class WorkspaceDockingService {
                 await this.closePanel(instanceId);
             } catch (error) {
                 // eslint-disable-next-line no-console
-                console.error(`[workspace] Failed to close panel "${instanceId}":`, error);
+                console.error('[workspace] Failed to close panel "%s":', instanceId, error);
             }
         }
     }

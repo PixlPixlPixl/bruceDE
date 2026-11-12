@@ -56,7 +56,7 @@ export class CordisPluginManager<TApi extends FrontendPluginAPI | BackendPluginA
         this.root = options.context ?? new Context();
         this.onError = options.onError ?? ((manifest, error) => {
             // eslint-disable-next-line no-console
-            console.error(`[plugin-runtime] "${manifest.id}" failed:`, error);
+            console.error('[plugin-runtime] "%s" failed:', manifest.id, error);
         });
     }
 

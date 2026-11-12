@@ -35,7 +35,7 @@ export class TerminalHostPanelFactory implements HostPanelFactory {
         // command and this capability. `start()` refuses to run twice.
         void widget.start().catch(error => {
             // eslint-disable-next-line no-console
-            console.error(`[workspace] Terminal "${request.instanceId}" failed to start:`, error);
+            console.error('[workspace] Terminal "%s" failed to start:', request.instanceId, error);
         });
         if (!widget.title.label) {
             widget.title.label = `Terminal ${request.instanceId}`;

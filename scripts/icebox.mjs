@@ -30,6 +30,11 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const STATE_DIR = path.join(ROOT, '.icebox');
 const STATE_FILE = path.join(STATE_DIR, 'install-state.json');
 const USER_DATA_DIR = path.join(os.homedir(), '.icebox');
+// Windows exposes npm and git only as `.cmd` shims, and Node refuses to run those
+// without a shell, so every spawn below asks for one on Windows alone. The
+// commands and arguments are literals (script names and target folders); the only
+// caller text that reaches the shell is the user's own `start` arguments, typed at
+// the same prompt that could run the command anyway.
 const IS_WINDOWS = process.platform === 'win32';
 
 /** Directories whose contents are generated, never fingerprints or kept. */

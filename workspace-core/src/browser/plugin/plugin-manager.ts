@@ -211,7 +211,7 @@ export class PluginManager implements FrontendApplicationContribution {
             } catch (error) {
                 // One broken plugin must never stop the remaining ones.
                 // eslint-disable-next-line no-console
-                console.error(`[plugin-host] Frontend plugin "${pluginId}" threw during activation:`, error);
+                console.error('[plugin-host] Frontend plugin "%s" threw during activation:', pluginId, error);
             }
         }
     }

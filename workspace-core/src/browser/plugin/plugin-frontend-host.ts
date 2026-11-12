@@ -44,7 +44,7 @@ export class PluginFrontendHost {
                 } catch (reportingError) {
                     // A throwing error sink must not hide the original failure.
                     // eslint-disable-next-line no-console
-                    console.error(`[plugin-host] Frontend plugin "${manifest.id}" failed:`, error, reportingError);
+                    console.error('[plugin-host] Frontend plugin "%s" failed:', manifest.id, error, reportingError);
                 }
             }
         });
