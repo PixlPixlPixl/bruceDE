@@ -1,3 +1,4 @@
+import os from 'node:os';
 import path from 'node:path';
 import { readFile } from 'node:fs/promises';
 import type { BackendPluginAPI } from '@icebox/plugin-api';
@@ -231,6 +232,21 @@ interface LiveSession {
     aguiUnavailable?: string;
     /** Keep the agent's conversation on disk so a later resume can find it. */
     persist: boolean;
+    /**
+     * Disposes a client that is still starting.
+     *
+     * A link is assigned only once its handshake finished, so releasing a
+     * session during startup would otherwise find no link to dispose and leave
+     * the child process running with nobody holding it.
+     */
+    abortStart?: () => void;
+    /**
+     * The start in flight, shared by every caller that needs the link.
+     *
+     * Two callers that arrive before the handshake finished would otherwise each
+     * build a client, leaving one child process running with no reference to it.
+     */
+    starting?: Promise<AgentLink>;
     /** True while a native session loads and its history is being replayed. */
     replaying: boolean;
     /**
@@ -272,7 +288,11 @@ export function activate(api: BackendPluginAPI): void {
     // read on its own; the host publishes them through `workspace.plugins`.
     const catalogue = api.services.get<WorkspacePluginsService>(WORKSPACE_SERVICE_IDS.plugins);
     const agents = (): Promise<AgentDescriptor[]> => discoverAgents(catalogue);
-    const cwd = api.workspace.cwd;
+    // A chat that names no folder runs in the user's own home directory, the same
+    // place their terminal defaults to. `api.workspace.cwd` is the checkout Icebox
+    // was started from, which is where a *project* session runs, not where a
+    // personal chat belongs.
+    const defaultCwd = os.homedir();
     const sessions = new Map<string, LiveSession>();
 
     const agentById = async (agentId: string): Promise<AgentDescriptor> => {
@@ -346,7 +366,7 @@ export function activate(api: BackendPluginAPI): void {
             status: 'idle',
             events: [],
             eventsBase: 0,
-            cwd,
+            cwd: defaultCwd,
             commands: [],
             models: [],
             queue: [],
@@ -396,9 +416,10 @@ export function activate(api: BackendPluginAPI): void {
             session.queue = [];
             session.cwd = workingDirectory;
             session.resume = resume;
-            // Persisting is what makes a later resume possible at all: a project
-            // chat keeps its session on disk, a plain chat stays ephemeral.
-            session.persist = resume !== undefined || options?.cwd !== undefined;
+            // Every session keeps its agent-side history: closing a tab releases
+            // the process, and only a persisted session can be resumed afterwards.
+            // An ephemeral chat would be lost the moment its tab closed.
+            session.persist = true;
             session.replaying = false;
             touch(session);
             // Start straight away: the model and command labels are only
@@ -573,6 +594,11 @@ export function activate(api: BackendPluginAPI): void {
                 return;
             }
             session.link?.dispose();
+            // A session released while its handshake was still in flight has no
+            // link yet; without this its child process would outlive every
+            // reference to it.
+            session.abortStart?.();
+            session.abortStart = undefined;
             session.link = undefined;
             session.status = 'idle';
             // Tell listeners before the record disappears: a project list keeps
@@ -656,6 +682,7 @@ export function activate(api: BackendPluginAPI): void {
     api.onDispose(() => {
         for (const session of sessions.values()) {
             session.link?.dispose();
+            session.abortStart?.();
         }
         sessions.clear();
     });
@@ -664,6 +691,7 @@ export function activate(api: BackendPluginAPI): void {
     api.onDispose(() => {
         for (const session of sessions.values()) {
             session.link?.dispose();
+            session.abortStart?.();
         }
     });
 
@@ -744,6 +772,11 @@ export function activate(api: BackendPluginAPI): void {
         if (session.link?.alive) {
             return session.link;
         }
+        // One start per session: a second caller arriving mid-handshake joins the
+        // one in flight instead of building a second client and child process.
+        if (session.starting) {
+            return session.starting;
+        }
         session.link?.dispose();
         session.link = undefined;
         session.protocol = undefined;
@@ -754,9 +787,18 @@ export function activate(api: BackendPluginAPI): void {
             throw new Error('This chat has no agent yet.');
         }
 
-        const link = await connectAgent(session, agent, workingDirectory);
-        session.link = link;
-        return link;
+        const starting = (async () => {
+            const link = await connectAgent(session, agent, workingDirectory);
+            session.link = link;
+            session.abortStart = undefined;
+            return link;
+        })();
+        session.starting = starting;
+        try {
+            return await starting;
+        } finally {
+            session.starting = undefined;
+        }
     }
 
     /**
@@ -835,6 +877,8 @@ export function activate(api: BackendPluginAPI): void {
         const connection = new AgUiConnection(endpoint, {
             event: event => appendAgUiEvent(session, event)
         });
+        // Releasable while the endpoint is still being reached.
+        session.abortStart = () => connection.dispose();
         const newThread = (): string => {
             const threadId = agUiId('thread');
             session.resume = { agentId: agent.id, protocol: 'agui', sessionId: threadId };
@@ -969,6 +1013,12 @@ export function activate(api: BackendPluginAPI): void {
             request: async (method, params) => requestFromAgent(method, params),
             exit: reason => {
                 // One process, several chats: an exit belongs to all of them.
+                // The process can exit before the host exists: `client.initialize()`
+                // is still running, and a release during startup disposes the
+                // connection. There is nothing bound to notify then.
+                if (!host) {
+                    return;
+                }
                 host.alive = false;
                 acpHosts.delete(host.key);
                 const bound = [...host.routes.values()];
@@ -979,6 +1029,7 @@ export function activate(api: BackendPluginAPI): void {
             }
         });
         const client = new AcpClient(connection);
+        session.abortStart = () => connection.dispose();
         const initialized = await client.initialize();
         if (initialized.authMethods && initialized.authMethods.length > 0) {
             connection.dispose();
@@ -1177,6 +1228,7 @@ export function activate(api: BackendPluginAPI): void {
             uiRequest: record => answerPiUiRequest(session, connection, record),
             exit: reason => handleExit(session, reason)
         });
+        session.abortStart = () => connection.dispose();
         const handshake = await connection.start().catch(error => {
             connection.dispose();
             throw error;

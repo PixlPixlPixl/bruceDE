@@ -44,6 +44,19 @@ export class WorkspaceDockingService {
         return this.shell.getWidgetById(instanceId);
     }
 
+    /**
+     * Brings an open panel instance to the front.
+     *
+     * Used by a plugin that added content to a panel it did not open: the panel
+     * is where the new content lives, so the shell has to show it.
+     */
+    async activatePanel(instanceId: string): Promise<void> {
+        if (!this.shell.getWidgetById(instanceId)) {
+            return;
+        }
+        await this.shell.activateWidget(instanceId);
+    }
+
     /** Instance ids of a panel type that are currently open. */
     getOpenInstances(panelTypeId: string): readonly string[] {
         return this.registry.getOpenInstances(panelTypeId);

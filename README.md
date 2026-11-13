@@ -152,6 +152,12 @@ F1 is the workspace menu, not a searchable copy of every command the renderer kn
 
 `Save Layout` snapshots the current arrangement — panels, dock areas, tab order, split sizes, which tabs are active, and each panel's own state — under a name, and `Load Layout` restores it into the running shell. Layouts are stored in the app's browser storage (the same store Theia uses for its own layout restore), so they belong to the installation and profile that saved them. The startup restoration of the last session's layout is unchanged.
 
+### Agent chat panels
+
+One Agent Chat panel holds a strip of session tabs. A tab is a conversation: closing it disconnects that agent (its process is released) while the panel stays open, and closing the panel releases every session in it. With no tabs the panel shows "No Current Sessions" and offers the two ways to start one — a chat of your own, or a project session from the Projects panel.
+
+A chat that names no folder runs in your home directory, which is what the `+` button and "Start a new chat" do. Resuming a stored session from the Projects panel adds it as a tab of the panel already on screen instead of opening a second one, and reveals that tab if the session is already open. Every session persists on disk, so a closed tab can be resumed later.
+
 ### Writing a plugin
 
 See [plugins/README.md](./plugins/README.md). Each plugin folder has a `plugin.json`, a `src/frontend` and/or `src/backend` entrypoint, and builds with `node packages/plugin-build/build.mjs <pluginDir>` (or `npm run build:plugins` for every plugin).

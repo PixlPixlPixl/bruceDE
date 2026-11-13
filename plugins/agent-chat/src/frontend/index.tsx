@@ -1,9 +1,12 @@
 import type * as ReactNS from 'react';
 import type {
     AgentChatLauncherService,
+    AgentChatOpenOptions,
     AgentSessionHandle,
+    AgentSessionSummary,
     FrontendPluginAPI,
     PanelHostTools,
+    PanelSavedState,
     PanelState,
     ResourceStat,
     WorkspaceResourcesService
@@ -59,65 +62,102 @@ export function activate(api: FrontendPluginAPI): void {
     const sessions = api.services.remote<AgentSessionsService>(WORKSPACE_SERVICE_IDS.agentSessions);
     const resources = api.services.get<WorkspaceResourcesService>(WORKSPACE_SERVICE_IDS.resources);
 
+    // Mounted containers, so a chat opened from elsewhere lands in the panel the
+    // user already has instead of a second one. The entry is created with the
+    // widget and dropped when the shell disposes it.
+    const containers = new Map<string, ContainerBridge>();
+    /** The container a caller most recently used, preferred over the rest. */
+    let preferred: string | undefined;
+
+    const mountedContainer = (): ContainerBridge | undefined => {
+        const first = preferred === undefined ? undefined : containers.get(preferred);
+        if (first?.mounted) {
+            return first;
+        }
+        for (const bridge of containers.values()) {
+            if (bridge.mounted) {
+                return bridge;
+            }
+        }
+        return undefined;
+    };
+
+    /**
+     * Puts a chat on screen: as a tab of the mounted container, or as the first
+     * tab of a new one.
+     *
+     * A container is a place conversations live side by side, so opening a chat
+     * never opens a second agent-chat panel. Only when none is mounted does this
+     * create one, and it starts with a single tab.
+     */
+    const launchChat = async (options: AgentChatOpenOptions): Promise<string> => {
+        const mounted = mountedContainer();
+        if (mounted) {
+            mounted.mounted.open(options);
+            preferred = mounted.instanceId;
+            await api.panels.activate(mounted.instanceId).catch(() => undefined);
+            return mounted.instanceId;
+        }
+        const tab = tabFrom(options);
+        const state: PanelState = { tabs: [stateOf(tab)], activeTab: tab.sessionId };
+        return api.panels.open(PANEL_CHAT, { state });
+    };
+
     // Panel ids are namespaced per plugin, so another plugin (Projects) cannot
     // open this chat through `panels.open`. It uses this launcher instead, which
     // stays owned by agent-chat and keeps the panel under this plugin's disposal.
     api.services.provide<AgentChatLauncherService>(WORKSPACE_SERVICE_IDS.agentChat, {
-        openChat: options => {
-            // Panel state is persisted with the layout, so it must be plain JSON:
-            // absent fields are omitted rather than stored as `undefined`.
-            const state: PanelState = {
-                agentId: options.agentId,
-                ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-                ...(options.sessionId === undefined ? {} : { sessionId: options.sessionId }),
-                ...(options.resume === undefined ? {} : { resume: options.resume }),
-                ...(options.title === undefined ? {} : { title: options.title })
-            };
-            return api.panels.open(PANEL_CHAT, { state });
-        }
+        openChat: launchChat
     });
 
     api.panels.register({
         id: PANEL_CHAT,
         title: 'Agent Chat',
         createWidget: (instanceId, host, state) => {
-            let widget: ReturnType<PanelHostTools['createReactWidget']> | undefined;
-            widget = host.createReactWidget(() =>
-                host.React.createElement(AgentChat, {
-                    React: host.React,
-                    sessions,
-                    resources,
-                    api,
-                    instanceId,
-                    initialSessionId: state?.sessionId,
-                    initialAgentId: state?.agentId,
-                    initialCwd: state?.cwd,
-                    initialResume: state?.resume,
-                    initialTitle: state?.title,
-                    onAgentBound: (name: string) => {
-                        if (widget) {
-                            widget.title.label = name;
-                        }
+            const bridge: ContainerBridge = { instanceId };
+            containers.set(instanceId, bridge);
+            const saved: PanelSavedState = {
+                // A widget that stores nothing is dropped from the saved layout
+                // entirely, so this never returns undefined.
+                store: () => bridge.mounted?.snapshot() ?? bridge.pending ?? { tabs: [] },
+                restore: state => {
+                    if (bridge.mounted) {
+                        bridge.mounted.apply(state);
+                    } else {
+                        // `restore` runs before the widget is attached, so the
+                        // component reads it on mount.
+                        bridge.pending = state;
                     }
-                })
+                }
+            };
+            const widget = host.createReactWidget(
+                () =>
+                    host.React.createElement(AgentChatPanel, {
+                        React: host.React,
+                        sessions,
+                        resources,
+                        bridge,
+                        onUsed: () => {
+                            preferred = instanceId;
+                        },
+                        initialState: state
+                    }),
+                saved
             );
             widget.id = instanceId;
             widget.title.closable = true;
-            widget.title.label = typeof state?.title === 'string' ? state.title : 'Agent Chat';
-            // The agent list lives in the backend, so the tab label is refined
-            // asynchronously; until then the panel keeps its generic name. A
-            // caller-supplied title (a project session) wins over the agent name.
-            const boundAgentId = state?.agentId;
-            if (typeof boundAgentId === 'string' && typeof state?.title !== 'string') {
-                void sessions.listAgents()
-                    .then(list => {
-                        const agent = list.find(candidate => candidate.id === boundAgentId);
-                        if (agent && widget && widget.title.label === 'Agent Chat') {
-                            widget.title.label = agent.name;
-                        }
-                    })
-                    .catch(() => undefined);
-            }
+            widget.title.label = 'Agent Chat';
+            widget.disposed.connect(() => {
+
+                // A disposed widget is detached, not unmounted: React never runs
+                // effect cleanup for a node the shell removed, so the sessions
+                // behind this panel have to be released here.
+                bridge.mounted?.dispose();
+                containers.delete(instanceId);
+                if (preferred === instanceId) {
+                    preferred = undefined;
+                }
+            });
             return widget;
         }
     });
@@ -128,9 +168,493 @@ export function activate(api: FrontendPluginAPI): void {
         execute: async () => {
             const agents = await sessions.listAgents();
             const first = availableAgents(agents)[0];
-            return api.panels.open(PANEL_CHAT, first ? { state: { agentId: first.id } } : undefined);
+            if (!first) {
+                // No agent installed: show the container's own empty state.
+                const mounted = mountedContainer();
+                return mounted ? mounted.instanceId : api.panels.open(PANEL_CHAT);
+            }
+            return launchChat({ agentId: first.id });
         }
     });
+}
+
+/** One session tab: everything needed to open, and later re-open, a chat. */
+interface ChatTab {
+    readonly sessionId: string;
+    readonly agentId: string;
+    readonly cwd?: string;
+    readonly resume?: AgentSessionHandle;
+    /** Caller-supplied tab label (a project session's title). */
+    readonly title?: string;
+}
+
+/**
+ * The plugin's side of a mounted container.
+ *
+ * `open` is how the launcher adds a chat to the container the user already has;
+ * `snapshot` and `apply` are what the layout restorer stores and replays, because
+ * a panel's construction options are fixed at creation and its tab list is not.
+ */
+interface MountedContainer {
+    open(options: AgentChatOpenOptions): void;
+    snapshot(): PanelState;
+    apply(state: PanelState | undefined): void;
+    /** Releases every session this container holds; safe to call twice. */
+    dispose(): void;
+}
+
+interface ContainerBridge {
+    readonly instanceId: string;
+    /** Present only while the React tree is mounted. */
+    mounted?: MountedContainer;
+    /** State saved by the layout restorer, read on mount. */
+    pending?: PanelState;
+}
+
+/** Chat session ids are opaque to the backend; only their stability matters. */
+let chatCounter = 0;
+function newChatId(): string {
+    chatCounter += 1;
+    return `chat-${Date.now().toString(36)}-${chatCounter}`;
+}
+
+function tabFrom(options: AgentChatOpenOptions): ChatTab {
+    return {
+        sessionId: options.sessionId ?? newChatId(),
+        agentId: options.agentId,
+        ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+        ...(options.resume === undefined ? {} : { resume: options.resume }),
+        ...(options.title === undefined ? {} : { title: options.title })
+    };
+}
+
+function stateOf(tab: ChatTab): PanelState {
+    return {
+        sessionId: tab.sessionId,
+        agentId: tab.agentId,
+        ...(tab.cwd === undefined ? {} : { cwd: tab.cwd }),
+        ...(tab.resume === undefined ? {} : { resume: tab.resume }),
+        ...(tab.title === undefined ? {} : { title: tab.title })
+    };
+}
+
+/** True for a handle read back from panel state, ignoring malformed data. */
+function isSessionHandle(value: unknown): value is AgentSessionHandle {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+    const record = value as Record<string, unknown>;
+    return typeof record.agentId === 'string'
+        && typeof record.sessionId === 'string'
+        && (record.protocol === 'acp' || record.protocol === 'pi-rpc');
+}
+
+/** One tab, read back from saved panel state. Malformed entries are dropped. */
+function readTab(value: unknown): ChatTab | undefined {
+    if (typeof value !== 'object' || value === null) {
+        return undefined;
+    }
+    const record = value as Record<string, unknown>;
+    if (typeof record.sessionId !== 'string' || typeof record.agentId !== 'string') {
+        return undefined;
+    }
+    const resume = isSessionHandle(record.resume) ? record.resume : undefined;
+    return {
+        sessionId: record.sessionId,
+        agentId: record.agentId,
+        ...(typeof record.cwd === 'string' ? { cwd: record.cwd } : {}),
+        ...(resume === undefined ? {} : { resume }),
+        ...(typeof record.title === 'string' ? { title: record.title } : {})
+    };
+}
+
+function readTabs(state: PanelState | undefined): readonly ChatTab[] {
+    const tabs = state?.tabs;
+    if (!Array.isArray(tabs)) {
+        return [];
+    }
+    return tabs.map(readTab).filter((tab): tab is ChatTab => tab !== undefined);
+}
+
+/**
+ * The single-session state an older build opened a panel with.
+ *
+ * Migrated into a one-tab container so a restored layout keeps working, and so
+ * there is only one agent-chat panel type.
+ */
+function readLegacyTab(state: PanelState | undefined): ChatTab | undefined {
+    const agentId = state?.agentId;
+    if (typeof agentId !== 'string') {
+        return undefined;
+    }
+    return readTab({
+        sessionId: typeof state?.sessionId === 'string' ? state.sessionId : newChatId(),
+        agentId,
+        cwd: state?.cwd,
+        resume: state?.resume,
+        title: state?.title
+    });
+}
+
+function readActive(state: PanelState | undefined, tabs: readonly ChatTab[]): string | undefined {
+    const active = state?.activeTab;
+    if (typeof active === 'string' && tabs.some(tab => tab.sessionId === active)) {
+        return active;
+    }
+    return tabs[0]?.sessionId;
+}
+
+/** How often a tab's own status and title are re-read. `summary` is built for it. */
+const TAB_SUMMARY_INTERVAL_MS = 2_000;
+
+interface AgentChatPanelProps {
+    readonly React: PanelHostTools['React'];
+    readonly sessions: AgentSessionsService;
+    readonly resources: WorkspaceResourcesService;
+    readonly bridge: ContainerBridge;
+    readonly initialState?: PanelState;
+    readonly onUsed: () => void;
+}
+
+/**
+ * The panel: a strip of session tabs over the chat of the active one.
+ *
+ * A conversation lives in a tab, not in the panel, so closing a tab disconnects
+ * that agent while the others keep running and the panel stays where it is.
+ * Closing the panel itself releases every session it holds.
+ */
+function AgentChatPanel(props: AgentChatPanelProps): ReactNS.ReactNode {
+    const { React, sessions, resources, bridge, onUsed } = props;
+    const initial = bridge.pending ?? props.initialState;
+    const [tabs, setTabs] = React.useState<readonly ChatTab[]>(() => {
+        const saved = readTabs(initial);
+        if (saved.length > 0) {
+            return saved;
+        }
+        const legacy = readLegacyTab(initial);
+        return legacy ? [legacy] : [];
+    });
+    const [active, setActive] = React.useState<string | undefined>(() => {
+        const saved = readTabs(initial);
+        if (saved.length > 0) {
+            return readActive(initial, saved);
+        }
+        const legacy = readLegacyTab(initial);
+        return legacy?.sessionId;
+    });
+    const [agents, setAgents] = React.useState<readonly AgentDescriptor[]>([]);
+    const [summaries, setSummaries] = React.useState<Readonly<Record<string, AgentSessionSummary>>>({});
+    const [pickerOpen, setPickerOpen] = React.useState(false);
+    const [notice, setNotice] = React.useState<string>();
+
+    // The bridge outlives a render, so it reads the latest values through refs.
+    const tabsRef = React.useRef(tabs);
+    tabsRef.current = tabs;
+    const activeRef = React.useRef(active);
+    activeRef.current = active;
+
+    const addTab = (options: AgentChatOpenOptions): string => {
+        const current = tabsRef.current;
+        if (options.sessionId !== undefined) {
+            const existing = current.find(tab => tab.sessionId === options.sessionId);
+            if (existing) {
+                setActive(existing.sessionId);
+                return existing.sessionId;
+            }
+        }
+        const tab = tabFrom(options);
+        setTabs([...current, tab]);
+        setActive(tab.sessionId);
+        setNotice(undefined);
+        return tab.sessionId;
+    };
+    const addRef = React.useRef(addTab);
+    addRef.current = addTab;
+
+    const closeTab = (sessionId: string): void => {
+        const remaining = tabsRef.current.filter(tab => tab.sessionId !== sessionId);
+        setTabs(remaining);
+        if (activeRef.current === sessionId) {
+            setActive(remaining[remaining.length - 1]?.sessionId);
+        }
+        // The tab was the session's lifeline: closing it disconnects the agent.
+        void sessions.release(sessionId).catch(() => undefined);
+    };
+
+    // Publish the live tab list, and undo it when the panel itself goes away.
+    const liveIds = React.useRef<readonly string[]>([]);
+    liveIds.current = tabs.map(tab => tab.sessionId);
+
+    // Releases every session the container holds: a closed panel disconnects all
+    // of its agents. Safe to call twice, because `release` is a no-op for a
+    // session the backend no longer has.
+    const releaseAll = React.useCallback((): void => {
+
+        for (const sessionId of liveIds.current) {
+            void sessions.release(sessionId).catch(() => undefined);
+        }
+    }, [sessions]);
+
+    // Publish the live tab list, and undo it when the panel itself goes away.
+    React.useEffect(() => {
+        bridge.mounted = {
+            open: options => {
+                addRef.current(options);
+                onUsed();
+            },
+            snapshot: () => ({
+                tabs: tabsRef.current.map(stateOf),
+                ...(activeRef.current === undefined ? {} : { activeTab: activeRef.current })
+            }),
+            apply: state => {
+                const next = readTabs(state);
+                setTabs(next);
+                setActive(readActive(state, next));
+            },
+            dispose: releaseAll
+        };
+        bridge.pending = undefined;
+        return () => {
+            bridge.mounted = undefined;
+        };
+    }, [bridge, onUsed, releaseAll]);
+
+    React.useEffect(() => releaseAll, [releaseAll]);
+
+    // Agent list: plugin data, so it only changes when the manager does.
+    React.useEffect(() => {
+        let cancelled = false;
+        const refresh = async (): Promise<void> => {
+            try {
+                const list = await sessions.listAgents();
+                if (!cancelled) {
+                    setAgents(list);
+                }
+            } catch {
+                // A missing agent list is not fatal: the strip keeps its tabs.
+            }
+        };
+        void refresh();
+        const timer = setInterval(() => void refresh(), AGENT_LIST_INTERVAL_MS);
+        return () => {
+            cancelled = true;
+            clearInterval(timer);
+        };
+    }, [sessions]);
+
+    // Tab labels and busy dots come from `summary`, which is made to be polled.
+    const tabIds = tabs.map(tab => tab.sessionId).join('|');
+    React.useEffect(() => {
+        if (tabIds.length === 0) {
+            setSummaries({});
+            return;
+        }
+        let cancelled = false;
+        const read = async (): Promise<void> => {
+            const rows = await Promise.all(
+                tabIds.split('|').map(sessionId => sessions.summary(sessionId).catch(() => undefined))
+            );
+            if (cancelled) {
+                return;
+            }
+            const next: Record<string, AgentSessionSummary> = {};
+            for (const row of rows) {
+                if (row) {
+                    next[row.sessionId] = row;
+                }
+            }
+            setSummaries(next);
+            // The agent reports the handle and title it learned *after* the tab
+            // opened. Storing them here is what lets a restored tab continue the
+            // same agent-side conversation instead of starting a new one.
+            setTabs(current => {
+                let changed = false;
+                const patched = current.map(tab => {
+                    const summary = next[tab.sessionId];
+                    if (!summary) {
+                        return tab;
+                    }
+                    const resume = summary.resume ?? tab.resume;
+                    const title = tab.title ?? summary.title;
+                    if (resume === tab.resume && title === tab.title) {
+                        return tab;
+                    }
+                    changed = true;
+                    return {
+                        ...tab,
+                        ...(resume === undefined ? {} : { resume }),
+                        ...(title === undefined ? {} : { title })
+                    };
+                });
+                return changed ? patched : current;
+            });
+        };
+        void read();
+        const timer = setInterval(() => void read(), TAB_SUMMARY_INTERVAL_MS);
+        return () => {
+            cancelled = true;
+            clearInterval(timer);
+        };
+    }, [tabIds, sessions]);
+
+    const installed = availableAgents(agents);
+    const missing = unavailableAgents(agents);
+
+    const label = (tab: ChatTab): string => {
+        if (tab.title) {
+            return tab.title;
+        }
+        const title = summaries[tab.sessionId]?.title;
+        if (title) {
+            return title;
+        }
+        return agents.find(agent => agent.id === tab.agentId)?.name ?? tab.agentId;
+    };
+
+    const pickAgent = (agent: AgentDescriptor): void => {
+        setPickerOpen(false);
+        if (!agent.available) {
+            return;
+        }
+        addTab({ agentId: agent.id });
+    };
+
+    /** The empty panel: nothing is open, and the two ways to start something. */
+    const startFirstChat = (): void => {
+        const first = installed[0];
+        if (!first) {
+            setNotice('No agent CLI is installed yet. Enable an agent plugin in the Plugin Manager first.');
+            return;
+        }
+        addTab({ agentId: first.id });
+    };
+
+    const renderEmpty = (): ReactNS.ReactNode =>
+        React.createElement(
+            'div',
+            { style: EMPTY_STYLE },
+            React.createElement('div', { style: EMPTY_TITLE_STYLE }, 'No Current Sessions'),
+            React.createElement(
+                'div',
+                { style: EMPTY_TEXT_STYLE },
+                'A chat lives in a tab. Close a tab to disconnect its agent; the panel stays open.'
+            ),
+            React.createElement(
+                'button',
+                { type: 'button', style: EMPTY_ACTION_STYLE, onClick: startFirstChat },
+                'Start a new chat.'
+            ),
+            React.createElement(
+                'button',
+                {
+                    type: 'button',
+                    style: EMPTY_ACTION_STYLE,
+                    onClick: () => setNotice(
+                        'Add a folder as a project in the Projects panel, then start a session there: '
+                        + 'it opens as a tab in this panel, already scoped to that folder.'
+                    )
+                },
+                'Start a new project session from the Projects panel.'
+            ),
+            notice ? React.createElement('div', { style: EMPTY_NOTICE_STYLE }, notice) : undefined
+        );
+
+    const strip = React.createElement(
+        'div',
+        { style: TAB_STRIP_STYLE },
+        React.createElement(
+            'div',
+            { style: TAB_ROW_STYLE },
+            tabs.map(tab =>
+                React.createElement(
+                    'div',
+                    {
+                        key: tab.sessionId,
+                        style: tab.sessionId === active ? { ...TAB_STYLE, ...TAB_ACTIVE_STYLE } : TAB_STYLE,
+                        onClick: () => {
+                            setActive(tab.sessionId);
+                            onUsed();
+                        }
+                    },
+                    React.createElement(
+                        'span',
+                        { style: TAB_LABEL_STYLE, title: tab.cwd ?? label(tab) },
+                        label(tab)
+                    ),
+                    summaries[tab.sessionId]?.status === 'running' || summaries[tab.sessionId]?.status === 'starting'
+                        ? React.createElement('span', { style: TAB_BUSY_STYLE, title: 'The agent is working.' })
+                        : undefined,
+                    React.createElement(
+                        'button',
+                        {
+                            type: 'button',
+                            style: TAB_CLOSE_STYLE,
+                            title: 'Close this session and disconnect its agent',
+                            'aria-label': `Close ${label(tab)}`,
+                            onClick: (event: ReactNS.MouseEvent) => {
+                                event.stopPropagation();
+                                closeTab(tab.sessionId);
+                            }
+                        },
+                        '×'
+                    )
+                )
+            )
+        ),
+        // Outside the scrolling tab row, so the picker is not clipped by it.
+        React.createElement(
+            'div',
+            { style: PICKER_ANCHOR_STYLE },
+            React.createElement(
+                'button',
+                {
+                    type: 'button',
+                    style: NEW_CHAT_BUTTON_STYLE,
+                    title: 'Start a new chat in your home folder',
+                    'aria-label': 'New chat',
+                    onClick: () => setPickerOpen(open => !open)
+                },
+                '+'
+            ),
+            pickerOpen ? renderPicker(React, installed, missing, pickAgent) : undefined
+        ),
+        pickerOpen
+            ? React.createElement('div', {
+                style: PICKER_BACKDROP_STYLE,
+                onClick: () => setPickerOpen(false)
+            })
+            : undefined
+    );
+
+    return React.createElement(
+        'div',
+        { style: PANEL_STYLE },
+        strip,
+        tabs.length === 0 ? renderEmpty() : undefined,
+        tabs.map(tab =>
+            React.createElement(
+                'div',
+                {
+                    key: tab.sessionId,
+                    style: tab.sessionId === active ? CHAT_SLOT_STYLE : CHAT_SLOT_HIDDEN_STYLE
+                },
+                // Every open tab stays mounted, so switching tabs keeps a
+                // half-written prompt, the scroll position and the turn in flight
+                // exactly where they were. Hidden tabs keep their layout (only
+                // visibility differs), which the composer needs to measure itself.
+                React.createElement(AgentChat, {
+                    React,
+                    sessions,
+                    resources,
+                    sessionId: tab.sessionId,
+                    agentId: tab.agentId,
+                    agent: agents.find(candidate => candidate.id === tab.agentId),
+                    cwd: tab.cwd,
+                    resume: tab.resume
+                })
+            )
+        )
+    );
 }
 
 /** Human name of the wire protocol, shown next to an agent and in the header. */
@@ -211,48 +735,30 @@ interface AgentChatProps {
     readonly React: PanelHostTools['React'];
     readonly sessions: AgentSessionsService;
     readonly resources: WorkspaceResourcesService;
-    readonly api: FrontendPluginAPI;
-    readonly instanceId: string;
-    readonly initialAgentId?: unknown;
-    /** Logical backend session id; defaults to the panel instance id. */
-    readonly initialSessionId?: unknown;
-    /** Folder the agent runs in, for a chat opened by a project list. */
-    readonly initialCwd?: unknown;
+    /** Backend session this tab holds; unique per open tab. */
+    readonly sessionId: string;
+    readonly agentId: string;
+    /** The agent's descriptor, for its name and picker tooltip. */
+    readonly agent?: AgentDescriptor;
+    /** Folder the agent runs in; absent means the user's home directory. */
+    readonly cwd?: string;
     /** Agent-side handle to continue an earlier conversation. */
-    readonly initialResume?: unknown;
-    readonly initialTitle?: unknown;
-    readonly onAgentBound: (name: string) => void;
+    readonly resume?: AgentSessionHandle;
 }
 
-/** Accepts a handle read back from panel state, ignoring malformed data. */
-function isSessionHandle(value: unknown): value is AgentSessionHandle {
-    if (typeof value !== 'object' || value === null) {
-        return false;
-    }
-    const record = value as Record<string, unknown>;
-    return typeof record.agentId === 'string'
-        && typeof record.sessionId === 'string'
-        && (record.protocol === 'acp' || record.protocol === 'pi-rpc');
-}
-
-/** One chat session: header with a new-chat picker, transcript, composer. */
+/** One chat session: header, transcript, composer. */
 function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
-    const { React, sessions, api, onAgentBound, resources } = props;
-    // The backend session id is the panel's own id unless a caller (Projects)
-    // supplied one, so a resumed conversation keeps the same session record even
-    // though the host chose a new panel instance id for the tab.
-    const sessionId = typeof props.initialSessionId === 'string' ? props.initialSessionId : props.instanceId;
-    const initialCwd = typeof props.initialCwd === 'string' ? props.initialCwd : undefined;
-    const initialResume = isSessionHandle(props.initialResume) ? props.initialResume : undefined;
-    const [agents, setAgents] = React.useState<readonly AgentDescriptor[]>([]);
-    const [agentId, setAgentId] = React.useState<string | undefined>(
-        typeof props.initialAgentId === 'string' ? props.initialAgentId : undefined
-    );
+    const { React, sessions, resources } = props;
+    // One tab is one session. The container decides which sessions exist and when
+    // they end, so this view only binds, follows and renders its own.
+    const sessionId = props.sessionId;
+    const agentId = props.agentId;
+    const initialCwd = props.cwd;
+    const initialResume = props.resume;
     const [state, setState] = React.useState<AgentState>();
     const [input, setInput] = React.useState('');
     const [error, setError] = React.useState<string>();
     const [busy, setBusy] = React.useState(false);
-    const [pickerOpen, setPickerOpen] = React.useState(false);
     const [modelMenuOpen, setModelMenuOpen] = React.useState(false);
     const [modelQuery, setModelQuery] = React.useState('');
     const [modelRows, setModelRows] = React.useState<readonly AgentModelInfo[]>([]);
@@ -262,31 +768,6 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
     const modelFilter = React.useRef<HTMLInputElement>(null);
     const pendingCaret = React.useRef<number | undefined>(undefined);
     const fileLookup = React.useRef(0);
-
-    React.useEffect(() => {
-        let cancelled = false;
-        // The agent list is plugin data, so it changes when a plugin is enabled or
-        // disabled in the manager. Re-reading it on its own slow tick means the
-        // picker follows the plugin list without reopening the tab.
-        const refresh = async (): Promise<void> => {
-            try {
-                const list = await sessions.listAgents();
-                if (!cancelled) {
-                    setAgents(list);
-                }
-            } catch (cause) {
-                if (!cancelled) {
-                    setError(cause instanceof Error ? cause.message : String(cause));
-                }
-            }
-        };
-        void refresh();
-        const timer = setInterval(() => void refresh(), AGENT_LIST_INTERVAL_MS);
-        return () => {
-            cancelled = true;
-            clearInterval(timer);
-        };
-    }, [sessions]);
 
     // Bind this panel's session to its agent; switching agents rebinds in place.
     React.useEffect(() => {
@@ -319,10 +800,9 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
         };
     }, [agentId, initialCwd, initialResume, sessionId, sessions]);
 
-    // The session holds a child process: release it when this panel disappears.
-    React.useEffect(() => () => {
-        void sessions.release(sessionId).catch(() => undefined);
-    }, [sessionId, sessions]);
+    // The container owns this session's lifetime: it releases the session when
+    // the tab closes, and every remaining one when the panel itself goes away.
+    // A view that unmounted on a tab switch must not disconnect the agent.
 
     // Follow the session while the panel is mounted.
     //
@@ -429,23 +909,22 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
     // backdrops below: a document-level listener would dismiss on `mousedown`,
     // before the `click` could land on the row the user aimed at.
     React.useEffect(() => {
-        if (!pickerOpen && !modelMenuOpen && !completion) {
+        if (!modelMenuOpen && !completion) {
             return;
         }
         const onKeyDown = (event: KeyboardEvent): void => {
             if (event.key !== 'Escape') {
                 return;
             }
-            setPickerOpen(false);
             setModelMenuOpen(false);
             setCompletion(undefined);
             composer.current?.focus();
         };
         document.addEventListener('keydown', onKeyDown);
         return () => document.removeEventListener('keydown', onKeyDown);
-    }, [pickerOpen, modelMenuOpen, completion]);
+    }, [modelMenuOpen, completion]);
 
-    const selected = agents.find(agent => agent.id === agentId);
+    const selected = props.agent;
 
     // Model search runs in the backend: Pi reports thousands of models, so the
     // picker asks for a filtered slice instead of holding the whole catalogue.
@@ -460,30 +939,6 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
         },
         [agentId, sessionId, sessions]
     );
-
-    /**
-     * Opens a chat for the chosen agent.
-     *
-     * The + button always means "another chat": a tab that is already bound
-     * opens a sibling tab, even for the same agent, so the running transcript
-     * stays where it is. Only a tab with no agent yet binds in place.
-     */
-    const pickAgent = (agent: AgentDescriptor): void => {
-        setPickerOpen(false);
-        if (!agent.available) {
-            return;
-        }
-        if (!agentId) {
-            setAgentId(agent.id);
-            onAgentBound(agent.name);
-            return;
-        }
-        const newState: PanelState = {
-            agentId: agent.id,
-            ...(initialCwd === undefined ? {} : { cwd: initialCwd })
-        };
-        void api.panels.open(PANEL_CHAT, { ref: props.instanceId, mode: 'tab-after', state: newState });
-    };
 
     const chooseModel = async (model: AgentModelInfo): Promise<void> => {
         setModelMenuOpen(false);
@@ -659,8 +1114,6 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
     // swaps it back to Queue/Steer, because sending now means joining the turn.
     const stoppable = working && Boolean(state?.capabilities?.interrupt);
     const showStop = stoppable && input.trim().length === 0;
-    const installed = availableAgents(agents);
-    const missing = unavailableAgents(agents);
     const modelState = state?.model;
     const usage = state?.usage;
     // The protocol label reports what the session actually speaks once it is up.
@@ -692,33 +1145,8 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
                     )
                     : undefined
             ),
-            React.createElement(
-                'div',
-                { style: { display: 'flex', alignItems: 'center', gap: '6px' } },
-                React.createElement(
-                    'div',
-                    { style: { position: 'relative' } },
-                    React.createElement(
-                        'button',
-                        {
-                            type: 'button',
-                            style: NEW_CHAT_BUTTON_STYLE,
-                            title: 'New chat',
-                            'aria-label': 'New chat',
-                            onClick: () => setPickerOpen(open => !open)
-                        },
-                        '+'
-                    ),
-                    pickerOpen ? renderPicker(React, installed, missing, pickAgent) : undefined
-                )
-            )
+            undefined
         ),
-        pickerOpen
-            ? React.createElement('div', {
-                style: PICKER_BACKDROP_STYLE,
-                onClick: () => setPickerOpen(false)
-            })
-            : undefined,
         modelMenuOpen ? React.createElement('div', {
             style: PICKER_BACKDROP_STYLE,
             onClick: () => setModelMenuOpen(false)
@@ -1174,12 +1602,150 @@ function describeProtocol(
 const PANEL_STYLE: ReactNS.CSSProperties = {
     display: 'flex',
     flexDirection: 'column',
+    position: 'relative',
     height: '100%',
     overflow: 'hidden',
     background: 'var(--theia-editor-background)',
     color: 'var(--theia-editor-foreground)',
     fontFamily: 'var(--theia-ui-font-family)',
     fontSize: 'var(--theia-ui-font-size1)'
+};
+
+/** The session tabs above the chat: what is open, and what is working. */
+const TAB_STRIP_STYLE: ReactNS.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    flexShrink: 0,
+    gap: '6px',
+    padding: '4px 8px',
+    borderBottom: '1px solid var(--theia-panel-border)'
+};
+
+const TAB_ROW_STYLE: ReactNS.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    flexGrow: 1,
+    gap: '4px',
+    minWidth: 0,
+    overflowX: 'auto'
+};
+
+const TAB_STYLE: ReactNS.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+    flexShrink: 0,
+    maxWidth: '220px',
+    padding: '2px 2px 2px 8px',
+    border: '1px solid transparent',
+    borderRadius: '3px',
+    cursor: 'pointer',
+    opacity: 0.75
+};
+
+/** The active tab is the one whose chat is on screen. */
+const TAB_ACTIVE_STYLE: ReactNS.CSSProperties = {
+    border: '1px solid var(--theia-panel-border)',
+    background: 'var(--theia-input-background)',
+    opacity: 1
+};
+
+const TAB_LABEL_STYLE: ReactNS.CSSProperties = {
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    fontSize: '11px'
+};
+
+/** A dot for a tab whose agent is mid-turn, so a hidden tab is not invisible. */
+const TAB_BUSY_STYLE: ReactNS.CSSProperties = {
+    flexShrink: 0,
+    width: '6px',
+    height: '6px',
+    borderRadius: '50%',
+    background: 'var(--theia-editorInfo-foreground, var(--theia-focusBorder))'
+};
+
+/** Closing a tab is what disconnects that session's agent. */
+const TAB_CLOSE_STYLE: ReactNS.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    width: '16px',
+    height: '16px',
+    padding: 0,
+    border: 'none',
+    borderRadius: '3px',
+    background: 'transparent',
+    color: 'inherit',
+    cursor: 'pointer',
+    fontSize: '12px',
+    lineHeight: 1,
+    opacity: 0.7
+};
+
+/** Contains the + picker, which positions itself against this box. */
+const PICKER_ANCHOR_STYLE: ReactNS.CSSProperties = {
+    position: 'relative',
+    flexShrink: 0
+};
+
+/** One tab's chat. Tabs stay mounted, so a hidden one is out of flow but alive. */
+const CHAT_SLOT_STYLE: ReactNS.CSSProperties = {
+    display: 'flex',
+    flexDirection: 'column',
+    flexGrow: 1,
+    minHeight: 0
+};
+
+const CHAT_SLOT_HIDDEN_STYLE: ReactNS.CSSProperties = {
+    ...CHAT_SLOT_STYLE,
+    position: 'absolute',
+    inset: 0,
+    visibility: 'hidden',
+    pointerEvents: 'none'
+};
+
+/** The panel with no session at all: what it can do from here. */
+const EMPTY_STYLE: ReactNS.CSSProperties = {
+    flexGrow: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '10px',
+    padding: '24px',
+    textAlign: 'center'
+};
+
+const EMPTY_TITLE_STYLE: ReactNS.CSSProperties = {
+    fontSize: '13px',
+    fontWeight: 600,
+    letterSpacing: '0.04em'
+};
+
+const EMPTY_TEXT_STYLE: ReactNS.CSSProperties = {
+    maxWidth: '48ch',
+    opacity: 0.7,
+    lineHeight: 1.5
+};
+
+const EMPTY_ACTION_STYLE: ReactNS.CSSProperties = {
+    padding: '5px 10px',
+    border: 'none',
+    borderRadius: '3px',
+    background: 'var(--theia-button-secondaryBackground, var(--theia-button-background))',
+    color: 'var(--theia-button-secondaryForeground, var(--theia-button-foreground))',
+    font: 'inherit',
+    cursor: 'pointer'
+};
+
+const EMPTY_NOTICE_STYLE: ReactNS.CSSProperties = {
+    maxWidth: '48ch',
+    paddingTop: '4px',
+    color: 'var(--theia-descriptionForeground)',
+    lineHeight: 1.5
 };
 
 const HEADER_STYLE: ReactNS.CSSProperties = {

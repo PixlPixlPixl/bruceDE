@@ -16,6 +16,7 @@ import { createServer } from 'node:http';
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { promises as fs } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -309,6 +310,10 @@ async function main() {
     check('no transcript entry repeats its own role label',
         !text(afterAgui).includes('tool:tool:'), text(afterAgui));
     check('AG-UI session settles back to idle', afterAgui?.status === 'idle', String(afterAgui?.status));
+    // A chat that names no folder belongs to the user, not to the checkout the
+    // app was started from: it runs in their home directory.
+    check('a session without a folder runs in the home directory',
+        afterAgui?.cwd === os.homedir(), `${afterAgui?.cwd} (expected ${os.homedir()})`);
     check('AG-UI session stores a thread handle',
         afterAgui?.resume?.protocol === 'agui' && Boolean(afterAgui?.resume?.sessionId),
         JSON.stringify(afterAgui?.resume));
@@ -471,6 +476,29 @@ async function main() {
             processGone = true;
         }
         check('the last chat closes the shared process', processGone, `pid ${survivorPid} ${processGone ? 'gone' : 'alive'}`);
+
+        // A chat released while its handshake is still running has no link yet.
+        // Nothing else holds that client, so the process would outlive it forever.
+        const startBaseline = pids().length;
+        await sessions.openSession('check-acp-start', 'acp-stub');
+        await sessions.release('check-acp-start');
+        await new Promise(resolve => setTimeout(resolve, 600));
+        await sessions.openSession('check-acp-start', 'acp-stub');
+        const restarted = await waitIdle(sessions, 'check-acp-start', 10_000);
+        check('a chat released while starting can be opened again',
+            typeof restarted?.status === 'string', String(restarted?.status));
+        await sessions.release('check-acp-start');
+        await new Promise(resolve => setTimeout(resolve, 600));
+        const alive = pids().slice(startBaseline).filter(pid => {
+            try {
+                process.kill(Number(pid), 0);
+                return true;
+            } catch {
+                return false;
+            }
+        });
+        check('releasing a chat while it starts leaves no process behind',
+            alive.length === 0, `alive: ${alive.join(', ') || 'none'}`);
     }
     delete process.env.CHECK_PID_FILE;
 

@@ -9,6 +9,8 @@ import type {
     PanelDefinition,
     PanelHostTools,
     PanelOpenOptions,
+    PanelSavedState,
+    PanelState,
     PluginDisposer,
     PluginManifest,
     RemoteService
@@ -36,7 +38,10 @@ export { PluginEventBus, PluginServiceRegistry };
  * looks like a blank white panel.
  */
 class HostReactWidget extends ReactWidget {
-    constructor(private readonly elementFactory: () => React.ReactNode) {
+    constructor(
+        private readonly elementFactory: () => React.ReactNode,
+        private readonly saved?: PanelSavedState
+    ) {
         super();
         this.addClass('icebox-plugin-panel');
     }
@@ -49,6 +54,32 @@ class HostReactWidget extends ReactWidget {
     protected render(): React.ReactNode {
         return this.elementFactory();
     }
+
+    /**
+     * Panel state that travels with the saved layout.
+     *
+     * The layout restorer keeps `constructionOptions` fixed but stores whatever
+     * a widget reports here, and calls {@link restoreState} on the rebuilt widget
+     * before it is attached — which is how a panel remembers contents it gained
+     * after it was opened.
+     */
+    storeState(): PanelState {
+        return this.saved ? this.saved.store() : {};
+    }
+
+    restoreState(state: unknown): void {
+        this.saved?.restore(isPanelState(state) ? state : undefined);
+    }
+}
+
+/**
+ * Accepts a value read back from persisted layout data.
+ *
+ * The layout file is user-editable and older builds wrote different shapes, so a
+ * saved state is a candidate rather than a promise.
+ */
+function isPanelState(value: unknown): value is PanelState {
+    return typeof value === 'object' && value !== null;
 }
 
 export interface PluginKernelOptions {
@@ -98,7 +129,8 @@ export class PluginKernel {
     readonly panelHostTools: PanelHostTools = {
         React,
         widgets: luminoWidgets,
-        createReactWidget: (render: () => React.ReactNode): Widget => new HostReactWidget(render)
+        createReactWidget: (render: () => React.ReactNode, saved?: PanelSavedState): Widget =>
+            new HostReactWidget(render, saved)
     };
 
     createApi(manifest: PluginManifest, directory: string, builtIn: boolean, bag: DisposerBag): FrontendPluginAPI {
@@ -167,6 +199,9 @@ export class PluginKernel {
             close: async (instanceId: string) => {
                 await docking.closePanel(instanceId);
                 instanceIds.delete(instanceId);
+            },
+            activate: async (instanceId: string) => {
+                await docking.activatePanel(instanceId);
             },
             getOpenInstances: () => Array.from(instanceIds)
         };

@@ -705,6 +705,21 @@ export interface PanelOpenOptions {
 }
 
 /**
+ * A panel's own state, saved with the layout alongside its construction options.
+ *
+ * Construction options are fixed when a panel is opened, so a panel whose
+ * contents change at runtime (a chat container whose session tabs come and go)
+ * cannot express them that way. The host persists this instead, next to the
+ * widget, and hands it back when the layout is restored.
+ */
+export interface PanelSavedState {
+    /** Called when the layout is saved; must return a {@link PanelState}. */
+    store(): PanelState;
+    /** Called with the state saved by an earlier `store`. */
+    restore(state: PanelState | undefined): void;
+}
+
+/**
  * Host capabilities handed to a panel factory.
  *
  * Panels must be built from *these* objects rather than importing Lumino or
@@ -716,8 +731,16 @@ export interface PanelHostTools {
     readonly React: typeof import('react');
     /** The host renderer's Lumino widget module (same classes the shell uses). */
     readonly widgets: typeof import('@lumino/widgets');
-    /** Create a widget whose body is a host-rendered React element. */
-    createReactWidget(render: () => React.ReactNode): Widget;
+    /**
+     * Create a widget whose body is a host-rendered React element.
+     *
+     * `saved` makes the widget's own state part of the persisted layout. It is
+     * the only way a panel can remember something it learned after it was
+     * opened; `state` passed to the factory is fixed at creation. `store` must
+     * always return a plain JSON value — a widget that stores `undefined` is
+     * dropped from the saved layout.
+     */
+    createReactWidget(render: () => React.ReactNode, saved?: PanelSavedState): Widget;
 }
 
 export interface PanelDefinition {
@@ -794,6 +817,14 @@ export interface PanelRegistryAPI {
      */
     open(panelId: string, options?: PanelOpenOptions): Promise<string>;
     close(instanceId: string): Promise<void>;
+    /**
+     * Brings an open panel instance to the front (and its dock group with it).
+     *
+     * Use this after opening or reusing something inside an existing panel: a
+     * caller that adds content to another panel should show it, not leave it
+     * behind whatever the user is looking at.
+     */
+    activate(instanceId: string): Promise<void>;
     /** Instance ids opened by this plugin that are still open. */
     getOpenInstances(): readonly string[];
 }
