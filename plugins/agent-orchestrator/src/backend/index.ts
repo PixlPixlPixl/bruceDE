@@ -601,11 +601,15 @@ export function activate(api: BackendPluginAPI): void {
             session.abortStart = undefined;
             session.link = undefined;
             session.status = 'idle';
-            // Tell listeners before the record disappears: a project list keeps
-            // the last known status/handle of a closed tab.
-            touch(session);
+            // Forget the session *before* telling listeners, so a consumer that
+            // re-reads it (`summary`) is told it is no longer live. Announcing
+            // first would report the record as still alive and idle, which is how
+            // a closed chat kept showing up as connected in a project list. A
+            // project keeps the title and handle it stored itself, so nothing is
+            // lost by answering "no such session".
             waiters.delete(sessionId);
             sessions.delete(sessionId);
+            touch(session);
         },
 
         searchModels: async (sessionId, query, limit) => {

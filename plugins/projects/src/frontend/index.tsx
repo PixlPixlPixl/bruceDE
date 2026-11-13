@@ -443,7 +443,7 @@ function SessionRow(props: SessionRowProps): ReactNS.ReactNode {
     return React.createElement(
         'div',
         { key: props.key, style: SESSION_ROW_STYLE },
-        React.createElement('span', { style: statusDot(session.status) }),
+        React.createElement('span', { style: statusDot(session.status, session.live) }),
         React.createElement(
             'div',
             { style: { flex: 1, minWidth: 0 } },
@@ -451,7 +451,7 @@ function SessionRow(props: SessionRowProps): ReactNS.ReactNode {
             React.createElement(
                 'div',
                 { style: SESSION_META_STYLE },
-                `${agentName(session.agentId)} · ${describeStatus(session.status)} · ${formatWhen(session.updatedAt)}`
+                `${agentName(session.agentId)} · ${describeStatus(session.status, session.live)} · ${formatWhen(session.updatedAt)}`
             )
         ),
         React.createElement(
@@ -640,7 +640,21 @@ function protocolLabel(protocol: AgentDescriptor['protocol']): string {
     return AGENT_PROTOCOL_LABELS[protocol];
 }
 
-function describeStatus(status: ProjectSessionRecord['status'] | undefined): string {
+/**
+ * Status of a stored conversation, in the list's own words.
+ *
+ * A closed chat keeps its last status but has no agent attached, so `live`
+ * decides between "idle" (an agent is there, waiting) and "disconnected".
+ * `undefined` means the record predates this field and nothing has looked it up
+ * yet, which reads as disconnected rather than as a claim it is connected.
+ */
+function describeStatus(
+    status: ProjectSessionRecord['status'] | undefined,
+    live: ProjectSessionRecord['live'] | undefined
+): string {
+    if (live !== true) {
+        return 'disconnected';
+    }
     switch (status) {
         case 'running':
             return 'working';
@@ -654,12 +668,17 @@ function describeStatus(status: ProjectSessionRecord['status'] | undefined): str
 }
 
 /** A coloured dot per status; the Git tokens need fallbacks because this build ships no Git extension. */
-function statusDot(status: ProjectSessionRecord['status'] | undefined): ReactNS.CSSProperties {
-    const color = status === 'error'
-        ? 'var(--theia-errorForeground)'
-        : status === 'running' || status === 'starting'
-            ? 'var(--theia-gitDecoration-modifiedResourceForeground, #e2c08d)'
-            : 'var(--theia-gitDecoration-untrackedResourceForeground, #73c991)';
+function statusDot(
+    status: ProjectSessionRecord['status'] | undefined,
+    live: ProjectSessionRecord['live'] | undefined
+): ReactNS.CSSProperties {
+    const color = live !== true
+        ? 'var(--theia-disabledForeground, #8c8c8c)'
+        : status === 'error'
+            ? 'var(--theia-errorForeground)'
+            : status === 'running' || status === 'starting'
+                ? 'var(--theia-gitDecoration-modifiedResourceForeground, #e2c08d)'
+                : 'var(--theia-gitDecoration-untrackedResourceForeground, #73c991)';
     return {
         flexShrink: 0,
         width: '7px',

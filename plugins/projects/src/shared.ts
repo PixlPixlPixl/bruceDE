@@ -25,7 +25,16 @@ export interface ProjectSessionRecord {
     readonly archived: boolean;
     /** The agent's own handle; absent until the agent has started once. */
     readonly resume?: AgentSessionHandle;
-    /** Last observed liveness while the session ran. */
+    /**
+     * Whether an agent was attached the last time this session was looked up.
+     *
+     * `status` alone cannot say it: a released session keeps its last status
+     * (`idle` most often), which read as "connected and idle". Closing a chat
+     * tab disconnects the agent without forgetting the conversation, so the list
+     * has to distinguish the two.
+     */
+    readonly live?: boolean;
+    /** Last observed status while the session ran. */
     readonly status?: AgentStatus;
 }
 

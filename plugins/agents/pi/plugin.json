@@ -14,8 +14,7 @@
                 "command": "pi",
                 "args": [
                     "--mode",
-                    "rpc",
-                    "--no-session"
+                    "rpc"
                 ]
             }
         ]

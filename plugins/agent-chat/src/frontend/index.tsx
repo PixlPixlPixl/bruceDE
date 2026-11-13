@@ -596,7 +596,7 @@ function AgentChatPanel(props: AgentChatPanelProps): ReactNS.ReactNode {
                                 closeTab(tab.sessionId);
                             }
                         },
-                        '×'
+                        renderCrossGlyph(React)
                     )
                 )
             )
@@ -614,7 +614,7 @@ function AgentChatPanel(props: AgentChatPanelProps): ReactNS.ReactNode {
                     'aria-label': 'New chat',
                     onClick: () => setPickerOpen(open => !open)
                 },
-                '+'
+                renderPlusGlyph(React)
             ),
             pickerOpen ? renderPicker(React, installed, missing, pickAgent) : undefined
         ),
@@ -1617,7 +1617,9 @@ const TAB_STRIP_STYLE: ReactNS.CSSProperties = {
     alignItems: 'center',
     flexShrink: 0,
     gap: '6px',
-    padding: '4px 8px',
+    // Same header box as the Git and File Browser panels (6px + a 22px control),
+    // so the separator line matches when the panels are side by side.
+    padding: '6px 10px',
     borderBottom: '1px solid var(--theia-panel-border)'
 };
 
@@ -1680,10 +1682,65 @@ const TAB_CLOSE_STYLE: ReactNS.CSSProperties = {
     background: 'transparent',
     color: 'inherit',
     cursor: 'pointer',
-    fontSize: '12px',
-    lineHeight: 1,
     opacity: 0.7
 };
+
+/**
+ * Glyphs are drawn, not typed.
+ *
+ * A `+` or `×` character carries its own baseline and side bearings, so flex
+ * centring leaves its ink slightly off-centre in a small box; bars are
+ * symmetric by construction, and a rotated pair crosses exactly in the middle.
+ */
+const GLYPH_BOX_STYLE: ReactNS.CSSProperties = {
+    position: 'relative',
+    flexShrink: 0
+};
+
+const GLYPH_BAR_STYLE: ReactNS.CSSProperties = {
+    position: 'absolute',
+    background: 'currentColor'
+};
+
+/** The + of the new-chat button: a horizontal and a vertical bar. */
+function renderPlusGlyph(
+    React: PanelHostTools['React'],
+    size = 10,
+    thickness = 1.5
+): ReactNS.ReactNode {
+    const offset = `${(size - thickness) / 2}px`;
+    return React.createElement(
+        'span',
+        { style: { ...GLYPH_BOX_STYLE, width: `${size}px`, height: `${size}px` } },
+        React.createElement('span', {
+            style: { ...GLYPH_BAR_STYLE, left: 0, right: 0, top: offset, height: `${thickness}px` }
+        }),
+        React.createElement('span', {
+            style: { ...GLYPH_BAR_STYLE, top: 0, bottom: 0, left: offset, width: `${thickness}px` }
+        })
+    );
+}
+
+/** The × of a tab's close button: two bars crossing at the box centre. */
+function renderCrossGlyph(
+    React: PanelHostTools['React'],
+    size = 8,
+    thickness = 1.25
+): ReactNS.ReactNode {
+    const bar: ReactNS.CSSProperties = {
+        ...GLYPH_BAR_STYLE,
+        left: 0,
+        right: 0,
+        top: `${(size - thickness) / 2}px`,
+        height: `${thickness}px`
+    };
+    return React.createElement(
+        'span',
+        { style: { ...GLYPH_BOX_STYLE, width: `${size}px`, height: `${size}px` } },
+        React.createElement('span', { style: { ...bar, transform: 'rotate(45deg)' } }),
+        React.createElement('span', { style: { ...bar, transform: 'rotate(-45deg)' } })
+    );
+}
 
 /** Contains the + picker, which positions itself against this box. */
 const PICKER_ANCHOR_STYLE: ReactNS.CSSProperties = {
@@ -1748,13 +1805,13 @@ const EMPTY_NOTICE_STYLE: ReactNS.CSSProperties = {
     lineHeight: 1.5
 };
 
+/** The chat's own row: agent, protocol. The strip above already draws the divider. */
 const HEADER_STYLE: ReactNS.CSSProperties = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: '8px',
-    padding: '6px 10px',
-    borderBottom: '1px solid var(--theia-panel-border)'
+    padding: '0 10px 6px'
 };
 
 const TITLE_STYLE: ReactNS.CSSProperties = {
@@ -1786,8 +1843,6 @@ const PROTOCOL_BADGE_STYLE: ReactNS.CSSProperties = {
 };
 
 const NEW_CHAT_BUTTON_STYLE: ReactNS.CSSProperties = {
-    // Flex centring instead of a line height: the glyph's own metrics would
-    // otherwise sit it slightly high in a 22px box.
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1795,13 +1850,11 @@ const NEW_CHAT_BUTTON_STYLE: ReactNS.CSSProperties = {
     width: '22px',
     height: '22px',
     padding: 0,
-    lineHeight: '1',
     background: 'var(--theia-button-secondaryBackground)',
     color: 'var(--theia-button-secondaryForeground)',
     border: 'none',
     borderRadius: '3px',
-    cursor: 'pointer',
-    fontSize: '15px'
+    cursor: 'pointer'
 };
 
 const PICKER_STYLE: ReactNS.CSSProperties = {

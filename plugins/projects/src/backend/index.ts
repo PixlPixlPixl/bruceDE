@@ -113,10 +113,12 @@ export function activate(api: BackendPluginAPI): void {
     };
 
     /**
-     * Applies a live summary to a stored session.
+     * Applies a summary to a stored session.
      *
      * Only fields the agent actually reports are overwritten, so a transient
-     * poll without a title cannot erase the one captured earlier.
+     * poll without a title cannot erase the one captured earlier. `live` is part
+     * of the comparison: a chat tab that closed reports the same `idle` status it
+     * had while open, and that difference is the whole point.
      */
     const applySummary = (
         project: ProjectRecord,
@@ -127,9 +129,11 @@ export function activate(api: BackendPluginAPI): void {
         const status = summary.status;
         const resume = summary.resume ?? session.resume;
         const updatedAt = summary.updatedAt ?? session.updatedAt;
+        const live = summary.live;
         if (
             title === session.title
             && status === session.status
+            && live === session.live
             && sameHandle(resume, session.resume)
             && updatedAt === session.updatedAt
         ) {
@@ -139,6 +143,7 @@ export function activate(api: BackendPluginAPI): void {
             ...session,
             title,
             status,
+            live,
             updatedAt,
             ...(resume ? { resume } : {})
         };
@@ -172,6 +177,7 @@ export function activate(api: BackendPluginAPI): void {
             createdAt: timestamp,
             updatedAt: timestamp,
             archived: false,
+            live: true,
             status: summary.status,
             resume: summary.resume
         };
@@ -187,11 +193,14 @@ export function activate(api: BackendPluginAPI): void {
             return;
         }
         const summary = await view.summary(sessionId).catch(() => undefined);
-        if (!summary || !summary.live) {
+        if (!summary) {
             return;
         }
         const found = findSession(sessionId);
         if (!found) {
+            if (!summary.live) {
+                return;
+            }
             // The chat starts before `addSession` can return; keep the summary
             // until the panel's call arrives. A session that runs inside a stored
             // project folder is adopted right away instead.
@@ -230,7 +239,9 @@ export function activate(api: BackendPluginAPI): void {
                     continue;
                 }
                 const summary = await view.summary(sessionId).catch(() => undefined);
-                if (summary?.live && applySummary(found.project, found.session, summary)) {
+                // A summary that is not live still carries the last known status:
+                // applying it is what marks a closed chat as disconnected.
+                if (summary && applySummary(found.project, found.session, summary)) {
                     changed = true;
                 }
             }
@@ -340,6 +351,7 @@ export function activate(api: BackendPluginAPI): void {
                 createdAt: timestamp,
                 updatedAt: summary?.updatedAt ?? timestamp,
                 archived: false,
+                live: summary?.live ?? true,
                 ...(summary?.status ? { status: summary.status } : {}),
                 ...(summary?.resume ? { resume: summary.resume } : {})
             };
