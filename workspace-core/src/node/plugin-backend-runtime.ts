@@ -1,3 +1,4 @@
+import { stat } from 'fs/promises';
 import { pathToFileURL } from 'url';
 import type { BackendPluginAPI, PluginManifest, RemoteService } from '@icebox/plugin-api';
 import { CordisPluginManager, type DisposerBag, type PluginRuntimeState } from '@icebox/plugin-runtime';
@@ -102,9 +103,27 @@ export class PluginBackendRuntime {
  * Imports a backend ESM bundle by absolute path. `import()` of a `file://` URL
  * is the only supported mechanism; the bundled path is already validated to be
  * inside the plugin folder.
+ *
+ * The URL carries a build stamp, because Node caches a module per URL for the
+ * lifetime of the process: without it, disabling and re-enabling a plugin would
+ * re-activate the *old* code, and only restarting the server would load a rebuilt
+ * backend. The stamp is the file's mtime and size, so a rebuild (which rewrites
+ * the bundle) is a different URL and a plain toggle is enough.
+ *
+ * Relative imports inside the bundle keep their own URLs and stay cached. That is
+ * fine here because each plugin is built into one file; a future bundle split
+ * would need its chunks stamped too.
  */
 async function importBackendModule(absolutePath: string): Promise<unknown> {
-    return import(pathToFileURL(absolutePath).href);
+    const url = pathToFileURL(absolutePath);
+    try {
+        const stats = await stat(absolutePath);
+        url.search = `?built=${stats.mtimeMs}-${stats.size}`;
+    } catch {
+        // An unreadable path is the loader's problem, not this function's: import
+        // it as-is and let the failure surface with its own message.
+    }
+    return import(url.href);
 }
 
 function createBackendApi(

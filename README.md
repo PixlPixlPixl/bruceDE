@@ -146,6 +146,8 @@ The runtime is implemented and covers the full contract plugins rely on:
 
 Built-in plugins are enabled by default so their panel types and commands are available; disabling one closes its panels and removes its contributions. Third-party plugins stay off until the user accepts the trust dialog. Either way the startup canvas is empty — enabled plugins register capabilities, they do not open panels.
 
+Disabling and re-enabling a plugin in the manager picks up whatever was built since, without restarting the app: frontend bundles are fetched and imported from a fresh blob URL, and backend bundles are imported with a build stamp so Node's per-URL module cache cannot hand back the previous code. A live chat session is unaffected by toggling a plugin that does not own it — the Agent Orchestrator does, so disabling it ends its sessions by design.
+
 ### The F1 menu
 
 F1 is the workspace menu, not a searchable copy of every command the renderer knows. It lists only what belongs there: a plugin's panel command, the plugin manager, and `Save Layout` / `Load Layout`. Nothing is added implicitly — a command joins the menu where it is registered (`WorkspacePalette`), which is why a disabled plugin simply disappears from it instead of offering a broken entry. Commands that are not in the menu stay registered and executable from a panel, a key binding or a future toolbar; the restriction is about presentation only.

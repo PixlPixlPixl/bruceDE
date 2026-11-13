@@ -527,6 +527,63 @@ async function main() {
     const released = await sessions.summary('check-agui');
     check('release() drops the live session', released.live === false, JSON.stringify(released));
 
+    // 11. A rebuilt backend bundle is re-imported when the plugin is re-enabled.
+    //
+    // Node keeps one module per URL for the life of the process, so the host
+    // stamps the bundle URL with the file's build stamp. Without it, a rebuilt
+    // backend only took effect after restarting the server — and restarting is
+    // what kills the agent sessions that belong to the backend process. The
+    // probe bundle records itself on `globalThis`, so a re-import is observable
+    // without reading a server log.
+    const reloadDir = path.join(root, '.tmp-plugin-reload');
+    const reloadBundle = path.join(reloadDir, 'bundle.js');
+    const probeKey = '__iceboxReloadProbe';
+    const writeBundle = async version => {
+        await fs.writeFile(reloadBundle, `globalThis['${probeKey}'] = '${version}';\nexport function activate() {}\n`);
+    };
+    const hostLib = path.join(root, 'workspace-core', 'lib', 'node', 'plugin-backend-runtime.js');
+    if (!existsSync(hostLib)) {
+        log(`  skip  backend reload (${path.relative(root, hostLib)} is missing. Run: npm run build:workspace-core)`);
+    } else {
+        await fs.mkdir(reloadDir, { recursive: true });
+        // Real plugin folders declare ESM, and Node warns on a typeless bundle.
+        await fs.writeFile(path.join(reloadDir, 'package.json'), '{"type":"module"}\n');
+        await writeBundle('v1');
+        try {
+            const hostRuntime = await import(`file://${hostLib}`);
+            const registries = await import(`file://${path.join(root, 'workspace-core', 'lib', 'common', 'plugin-registries.js')}`);
+            const pluginHost = new hostRuntime.PluginBackendRuntime({
+                isTrusted: () => true,
+                logger: { info: () => undefined, error: message => log(`  reload error: ${message}`) },
+                services: new registries.PluginServiceRegistry(),
+                events: new registries.PluginEventBus()
+            });
+            const probePlugin = {
+                manifest: {
+                    id: 'icebox.reload-probe',
+                    name: 'Reload probe',
+                    version: '0.1.0',
+                    apiVersion: 1,
+                    entrypoints: { backend: './bundle.js' }
+                },
+                directory: reloadDir,
+                builtIn: false,
+                backendEntrypoint: reloadBundle
+            };
+            await pluginHost.load(probePlugin);
+            check('a backend plugin bundle is imported', globalThis[probeKey] === 'v1', String(globalThis[probeKey]));
+            await pluginHost.unload(probePlugin.manifest.id);
+            await writeBundle('v2');
+            await pluginHost.load(probePlugin);
+            check('a rebuilt backend bundle is re-imported on re-enable',
+                globalThis[probeKey] === 'v2', String(globalThis[probeKey]));
+            await pluginHost.unload(probePlugin.manifest.id);
+        } finally {
+            delete globalThis[probeKey];
+            rmSync(reloadDir, { recursive: true, force: true });
+        }
+    }
+
     stub.server.close();
     console.log('');
     if (failures.length > 0) {
