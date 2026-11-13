@@ -648,7 +648,6 @@ function AgentChatPanel(props: AgentChatPanelProps): ReactNS.ReactNode {
                     resources,
                     sessionId: tab.sessionId,
                     agentId: tab.agentId,
-                    agent: agents.find(candidate => candidate.id === tab.agentId),
                     cwd: tab.cwd,
                     resume: tab.resume
                 })
@@ -738,8 +737,6 @@ interface AgentChatProps {
     /** Backend session this tab holds; unique per open tab. */
     readonly sessionId: string;
     readonly agentId: string;
-    /** The agent's descriptor, for its name and picker tooltip. */
-    readonly agent?: AgentDescriptor;
     /** Folder the agent runs in; absent means the user's home directory. */
     readonly cwd?: string;
     /** Agent-side handle to continue an earlier conversation. */
@@ -923,8 +920,6 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
         document.addEventListener('keydown', onKeyDown);
         return () => document.removeEventListener('keydown', onKeyDown);
     }, [modelMenuOpen, completion]);
-
-    const selected = props.agent;
 
     // Model search runs in the backend: Pi reports thousands of models, so the
     // picker asks for a filtered slice instead of holding the whole catalogue.
@@ -1116,37 +1111,12 @@ function AgentChat(props: AgentChatProps): ReactNS.ReactNode {
     const showStop = stoppable && input.trim().length === 0;
     const modelState = state?.model;
     const usage = state?.usage;
-    // The protocol label reports what the session actually speaks once it is up.
-    // Before that it shows what the agent will be tried over first, so the label
-    // never goes blank on an idle tab.
-    const protocolInUse = state?.protocol ?? (selected?.agui ? 'agui' : selected?.protocol);
-    const protocolHint = describeProtocol(protocolInUse, selected, state?.aguiUnavailable);
 
+    // No chat header: the tab already names the agent, and the protocol is the
+    // picker's business. A per-session label here would only repeat both.
     return React.createElement(
         'div',
         { style: PANEL_STYLE },
-        React.createElement(
-            'div',
-            { style: HEADER_STYLE },
-            React.createElement(
-                'div',
-                { style: { display: 'flex', alignItems: 'baseline', gap: '8px', minWidth: 0 } },
-                React.createElement('span', { style: TITLE_STYLE }, 'Chat'),
-                React.createElement(
-                    'span',
-                    { style: AGENT_NAME_STYLE, title: selected ? describeAgent(selected) : undefined },
-                    selected ? selected.name : 'no agent'
-                ),
-                protocolInUse
-                    ? React.createElement(
-                        'span',
-                        { style: PROTOCOL_BADGE_STYLE, title: protocolHint },
-                        protocolLabel(protocolInUse)
-                    )
-                    : undefined
-            ),
-            undefined
-        ),
         modelMenuOpen ? React.createElement('div', {
             style: PICKER_BACKDROP_STYLE,
             onClick: () => setModelMenuOpen(false)
@@ -1569,36 +1539,12 @@ function describeAgent(agent: AgentDescriptor): string {
 }
 
 /**
- * Tooltip of the header's protocol label.
+ * Tooltip of the agent picker's protocol column, and of the model chip.
  *
- * The label itself is short because the header is dense; the reason a chat is
- * not on AG-UI belongs here, where there is room for the endpoint and what it
- * answered. Before the session starts, "AG-UI" is the interface it will be tried
- * over first, and the native protocol is the stated fallback.
+ * The protocol a session actually speaks is reported per session, not in a panel
+ * header: the tab names the agent, and the picker lists what it will be tried
+ * over first, so there is no separate badge to explain.
  */
-function describeProtocol(
-    protocol: AgentProtocol | undefined,
-    agent: AgentDescriptor | undefined,
-    unavailable: string | undefined
-): string | undefined {
-    if (!protocol) {
-        return undefined;
-    }
-    if (protocol === 'agui') {
-        return agent?.agui
-            ? `This chat talks AG-UI, streaming from ${agent.agui}.`
-            : 'This chat talks AG-UI.';
-    }
-    const native = `This chat talks ${protocolLabel(protocol)}.`;
-    if (!agent?.agui) {
-        return native;
-    }
-    if (unavailable) {
-        return `${native} ${unavailable}`;
-    }
-    return `${native} AG-UI is tried first; ${protocolLabel(protocol)} is the fallback.`;
-}
-
 const PANEL_STYLE: ReactNS.CSSProperties = {
     display: 'flex',
     flexDirection: 'column',
@@ -1803,43 +1749,6 @@ const EMPTY_NOTICE_STYLE: ReactNS.CSSProperties = {
     paddingTop: '4px',
     color: 'var(--theia-descriptionForeground)',
     lineHeight: 1.5
-};
-
-/** The chat's own row: agent, protocol. The strip above already draws the divider. */
-const HEADER_STYLE: ReactNS.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: '8px',
-    padding: '0 10px 6px'
-};
-
-const TITLE_STYLE: ReactNS.CSSProperties = {
-    textTransform: 'uppercase',
-    letterSpacing: '0.08em',
-    fontSize: '11px',
-    opacity: 0.7
-};
-
-const AGENT_NAME_STYLE: ReactNS.CSSProperties = {
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-    fontWeight: 600
-};
-
-/** The wire protocol in use, next to the agent's name. */
-const PROTOCOL_BADGE_STYLE: ReactNS.CSSProperties = {
-    flexShrink: 0,
-    padding: '1px 5px',
-    border: '1px solid var(--theia-panel-border)',
-    borderRadius: '3px',
-    color: 'var(--theia-descriptionForeground)',
-    fontSize: '10px',
-    lineHeight: '14px',
-    letterSpacing: '0.04em',
-    textTransform: 'uppercase',
-    whiteSpace: 'nowrap'
 };
 
 const NEW_CHAT_BUTTON_STYLE: ReactNS.CSSProperties = {
